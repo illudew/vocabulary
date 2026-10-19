@@ -1582,6 +1582,21 @@ function showFeedback(ok,d,md,r,chosenW,force){
   if(typed){var inp=$('answer');if(inp){inp.disabled=true;inp.blur()}var sb=$('submitBtn');if(sb)sb.classList.add('hidden');}
   var h=$('hintBtn'),n=$('nextBtn'),lb=$('listenBtn');
   if(h)h.classList.add('hidden');if(lb)lb.classList.add('hidden');if(n)n.classList.remove('hidden');
+  /* 答错后强制等待 3 秒才能进入下一个单词：期间「继续」禁用并显示倒计时，留给解析阅读时间 */
+  if(nextTimer){clearInterval(nextTimer);nextTimer=null}
+  if(ok){nextLockUntil=0;if(n){n.disabled=false;n.textContent='继续'}}
+  else{
+    nextLockUntil=Date.now()+WRONG_NEXT_WAIT;
+    if(n){
+      n.disabled=true;n.textContent='继续 (3s)';
+      nextTimer=setInterval(function(){
+        var b=$('nextBtn'),sec=Math.ceil((nextLockUntil-Date.now())/1000);
+        if(!b)return;
+        if(sec<=0){clearInterval(nextTimer);nextTimer=null;nextLockUntil=0;b.disabled=false;b.textContent='继续';b.focus();return}
+        b.textContent='继续 ('+sec+'s)';
+      },250);
+    }
+  }
   var fb=$('feedback');fb.className='feedback '+(ok?'ok':'bad');
   var pttNote=r?'<div class="ptt-note">熟练度 '+proficiencyPct(r)+'%'+(r.streak?' · 连对 '+r.streak:'')+'</div>':'';
   var head;
@@ -1617,8 +1632,15 @@ function showFeedback(ok,d,md,r,chosenW,force){
   }
   if(n)n.focus();
 }
-var lastNext=0;
-function next(){var now=Date.now();if(now-lastNext<200)return;lastNext=now;if(!session)return;if(session.failed||!session.queue.length){finish();return}renderCard()}
+var lastNext=0,nextLockUntil=0,nextTimer=null,WRONG_NEXT_WAIT=3000;
+function next(){
+  var now=Date.now();
+  if(now-lastNext<200)return;lastNext=now;
+  /* 答错后的 3 秒强制等待：按钮、滑动、快捷键全部拦截 */
+  if(now<nextLockUntil){toast('先看看解析，'+Math.ceil((nextLockUntil-now)/1000)+' 秒后继续');return}
+  if(!session)return;
+  if(session.failed||!session.queue.length){finish();return}renderCard()
+}
 
 /* ---------- day / streak ---------- */
 function markDay(ok){
