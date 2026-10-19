@@ -760,7 +760,7 @@ function pushAhead(q,item,gap){
 var lastCtx=null,curCatKey=null,recallSel={band:'PST',count:20,hard:false,mode:'auto'},listSel={mode:'auto'};
 function beginSession(q,msg,ctx){
   session={queue:q,total:q.length,correct:0,wrong:0,cards:0,lastAutoMode:null,autoBag:null,
-    vPure:0,vFar:0,vBig:0,vLate:0,vLost:0,uniq:{},uniqN:0,combo:0,maxCombo:0,log:[],ctx:ctx||{type:'list'}};
+    vPure:0,vFar:0,vBig:0,vLate:0,vLost:0,combo:0,maxCombo:0,log:[],ctx:ctx||{type:'list'}};
   lastCtx=session.ctx;
   if(session.ctx.hard){session.hp=100;session.hardErr=0;}
   phase='question';showView('study');renderStudy();renderCard();
@@ -1504,7 +1504,8 @@ function submit(force,chosenW){
   session.cards++;
   var rec=session.queue.shift();
   /* 滚动背单词：初识词隔几个词再「复现」确认一次；答错的词隔几个词再考一遍，
-     直到答对为止。分数按词去重结算（见 showFeedback），不会因重复出现超发 */
+     直到答对为止。每次补卡都会计入 session.total（总分母），每次作答各得一个判定，
+     满分恒为 10,000,000 + 大 Pure 数，不会因重复出现超发（见 showFeedback） */
   if(firstMeet){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'retest'},firstGap())}
   else if(!ok){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'review'},reviewGap())}
   /* 初识作答不计入「近期错误 / 忘记」窗口，避免间接影响 PTT 折扣 */
@@ -1540,18 +1541,14 @@ function showFeedback(ok,d,md,r,chosenW,force){
   updatePlan();
   var typed=isTypedMode(md);
   var verdict=judgeVerdict(ok,hintUsed,typed,force,chosenW,d.w);
-  /* 本轮结算统计：pure / far / lost 个数，以及本轮出现过的去重单词数 */
+  /* 本轮结算统计：每次作答都计入（滚动复现的重复作答同样计分），不作去重。
+     分母 = 最终出卡总数（session.total，含滚动补卡的次数），每次作答恰得一个判定，
+     因此 vPure+vFar+vLost 恒等于总卡数，基础分 ≤ 10,000,000，绝不为负；
+     全部 pure 时基础分恰为 10,000,000，大 Pure（≤5 秒答对）每个再 +1，
+     理论满分 = 10,000,000 + 大 Pure 数 */
   if(session){
-    /* 滚动复现会让同一词多次作答：判定按词去重（后答覆盖先答）。
-       vPure/vFar/vBig 参与分数计算，若按出现次数累加，分数会超过理论满分，因此先扣回旧判定再加新判定 */
-    var prevU=session.uniq[d.w];
-    if(prevU){
-      if(prevU.v==='pure')session.vPure--;else if(prevU.v==='far')session.vFar--;else session.vLost--;
-      if(prevU.big)session.vBig--;else if(prevU.v==='pure')session.vLate--;
-    }else{session.uniqN++}
     var isBig=verdict==='pure'&&(session.lastElapsed||0)<=5000;
-    session.uniq[d.w]={v:verdict,big:isBig};
-    if(verdict==='pure'){if(isBig)session.vBig++;else session.vLate++}
+    if(verdict==='pure'){session.vPure++;if(isBig)session.vBig++;else session.vLate++}
     else if(verdict==='far')session.vFar++;else session.vLost++;
     if(verdict==='lost')session.combo=0;else session.combo=(session.combo||0)+1;
     if(session.combo>(session.maxCombo||0))session.maxCombo=session.combo;
@@ -1661,8 +1658,9 @@ function roundTier(cards,correct,far){
 }
 /* 难度档位前缀（Arcaea 风格）：Lv1-3 PST / Lv4-6 PRS / Lv7-10 FTR / Lv11 BYD / 专有名词 SP */
 function diffCat(L){L=+L||1;return L<=3?'PST':L<=6?'PRS':L<=10?'FTR':L===11?'BYD':'SP'}
-/* 分数：基础分 = 10,000,000 / 本轮总单词数；Pure 全额、Far 一半、Lost 不得分；
-   判定附加分无上限：只有大 Pure（≤5 秒答对）额外 +1 分 */
+/* 分数：基础分 = 10,000,000 / 本轮总作答数（含滚动复现补卡）；Pure 全额、Far 一半、Lost 不得分；
+   全部 pure 时基础分恰为 10,000,000，大 Pure（≤5 秒答对）每个额外 +1 分，
+   理论满分 = 10,000,000 + 大 Pure 数，任何情况下不为负 */
 function roundScore(cards,vP,vF,bigP){
   if(!cards)return 0;
   return Math.round(1e7/cards*((vP||0)+(vF||0)/2)+(bigP||0));
@@ -1693,7 +1691,8 @@ var lastRound=null;
 function finish(){
   var ctx=(session&&session.ctx)||lastCtx||{};
   var log=session&&session.log?session.log.slice():[];
-  var total=session?(session.uniqN||0):0;
+  /* 总单词数 = 最后一个单词背完时（即将弹出结算页）的总卡数：初识词数 + 滚动复现/重考补卡数 */
+  var total=session?(session.total||0):0;
   var vP=session?(session.vPure||0):0,vF=session?(session.vFar||0):0,vL=session?(session.vLost||0):0;
   var vBig=session?(session.vBig||0):0,vLate=session?(session.vLate||0):0;
   var maxCombo=session?(session.maxCombo||0):0;
