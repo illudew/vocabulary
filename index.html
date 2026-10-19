@@ -759,7 +759,7 @@ function pushAhead(q,item,gap){
 /* ---------- session ---------- */
 var lastCtx=null,curCatKey=null,recallSel={band:'PST',count:20,hard:false,mode:'auto'},listSel={mode:'auto'};
 function beginSession(q,msg,ctx){
-  session={queue:q,total:q.length,correct:0,wrong:0,cards:0,lastAutoMode:null,autoBag:null,single:true,
+  session={queue:q,total:q.length,correct:0,wrong:0,cards:0,lastAutoMode:null,autoBag:null,
     vPure:0,vFar:0,vBig:0,vLate:0,vLost:0,uniq:{},uniqN:0,combo:0,maxCombo:0,log:[],ctx:ctx||{type:'list'}};
   lastCtx=session.ctx;
   if(session.ctx.hard){session.hp=100;session.hardErr=0;}
@@ -1503,11 +1503,10 @@ function submit(force,chosenW){
   /* 队列推进：初识词先隔几个词再考一次（复现通过后才解锁 PTT）；其余按对错正常排程 */
   session.cards++;
   var rec=session.queue.shift();
-  /* list / 回忆模式为单遍：每个单词一轮只出现一次，方便按词计分 */
-  if(!session.single){
-    if(firstMeet){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'retest'},firstGap())}
-    else if(!ok){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'review'},reviewGap())}
-  }
+  /* 滚动背单词：初识词隔几个词再「复现」确认一次；答错的词隔几个词再考一遍，
+     直到答对为止。分数按词去重结算（见 showFeedback），不会因重复出现超发 */
+  if(firstMeet){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'retest'},firstGap())}
+  else if(!ok){session.total++;session.queue=pushAhead(session.queue,{w:rec.w,kind:'review'},reviewGap())}
   /* 初识作答不计入「近期错误 / 忘记」窗口，避免间接影响 PTT 折扣 */
   if(!firstMeet){state.recent.push({o:ok?1:0,f:force?1:0});if(state.recent.length>100)state.recent.shift()}
   markDay(ok);
@@ -1543,13 +1542,20 @@ function showFeedback(ok,d,md,r,chosenW,force){
   var verdict=judgeVerdict(ok,hintUsed,typed,force,chosenW,d.w);
   /* 本轮结算统计：pure / far / lost 个数，以及本轮出现过的去重单词数 */
   if(session){
-    if(verdict==='pure')session.vPure++;else if(verdict==='far')session.vFar++;else session.vLost++;
-    if(session.uniq&&!session.uniq[d.w]){session.uniq[d.w]=1;session.uniqN++}
+    /* 滚动复现会让同一词多次作答：判定按词去重（后答覆盖先答）。
+       vPure/vFar/vBig 参与分数计算，若按出现次数累加，分数会超过理论满分，因此先扣回旧判定再加新判定 */
+    var prevU=session.uniq[d.w];
+    if(prevU){
+      if(prevU.v==='pure')session.vPure--;else if(prevU.v==='far')session.vFar--;else session.vLost--;
+      if(prevU.big)session.vBig--;else if(prevU.v==='pure')session.vLate--;
+    }else{session.uniqN++}
+    var isBig=verdict==='pure'&&(session.lastElapsed||0)<=5000;
+    session.uniq[d.w]={v:verdict,big:isBig};
+    if(verdict==='pure'){if(isBig)session.vBig++;else session.vLate++}
+    else if(verdict==='far')session.vFar++;else session.vLost++;
     if(verdict==='lost')session.combo=0;else session.combo=(session.combo||0)+1;
     if(session.combo>(session.maxCombo||0))session.maxCombo=session.combo;
-    /* 大 Pure：5 秒内答对（屏幕上不显示计时），其余 pure 记为 Late */
-    if(verdict==='pure'){if((session.lastElapsed||0)<=5000)session.vBig++;else session.vLate++;}
-    if(session.log)session.log.push({w:d.w,verdict:verdict,big:(verdict==='pure'&&(session.lastElapsed||0)<=5000)});
+    if(session.log)session.log.push({w:d.w,verdict:verdict,big:isBig});
     /* 困难模式血条：答错 −10 且连错每次递增 −4；pure +2、far +1 */
     if(session.ctx&&session.ctx.hard){
       if(verdict==='lost'){
