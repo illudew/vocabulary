@@ -722,7 +722,15 @@ function nearMiss(input,target){
 }
 function allowNew(d){return d.baseLv===state.settings.level}
 function priority(d){var r=state.words[d.w];var p=personalLevel(d,r);var struggle=r?((r.productionWrong||0)*2+(r.meaningWrong||0)+(r.hints||0)*0.3):0;var stage=r?(r.stage||0):0;return p*0.6+struggle*0.35+stage*0.05+Math.random()*0.7}
-function getDue(){var t=Date.now();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.dueAt<=t}).sort(function(a,b){return (state.words[a].dueAt||0)-(state.words[b].dueAt||0)})}
+/* 今日待复习以「最近一次早上 8 点」为界：8 点把过去 24h 内到期的词一次性纳入今日复习，
+   其余时间不再刷新；期间新到期的词（含答错回 10 分钟的词）等明天 8 点统一出现 */
+function reviewCutoff(){
+  var d=new Date(),h=d.getHours();
+  d.setHours(8,0,0,0);
+  if(h<8)d.setDate(d.getDate()-1);
+  return d.getTime();
+}
+function getDue(){var t=reviewCutoff();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.dueAt<=t}).sort(function(a,b){return (state.words[a].dueAt||0)-(state.words[b].dueAt||0)})}
 function introducedToday(){var t=today(),n=0;Object.keys(state.words).forEach(function(w){var r=state.words[w];if(r.introduced===t&&r.seen>0)n++});return n}
 function todayWords(){var t=today();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.introduced===t})}
 function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
@@ -839,11 +847,11 @@ function renderStudy(){
   var b=$('studyBack');if(b)b.onclick=exitStudy;
   bindGestures();
 }
-/* ---------- 今日待复习（按遗忘曲线到期聚合） ---------- */
-/* 某 List 当前所有到期单词（seen>0 且 dueAt 已过） */
+/* ---------- 今日待复习（按遗忘曲线到期聚合，以每天早上 8 点为刷新界） ---------- */
+/* 某 List 当前所有到期单词（seen>0 且 dueAt 已过最近一次早上 8 点） */
 function dueWordsOfList(key){
   var L=LIST_BY_KEY[key];if(!L)return [];
-  var t=Date.now();
+  var t=reviewCutoff();
   return (L.words||[]).filter(function(w){
     var r=state.words[w];
     /* 只统计归属本 List 的记录（r.src），共用词不会重复出现在其他 List 的待复习里 */
