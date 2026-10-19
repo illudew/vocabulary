@@ -370,7 +370,9 @@ window.__startApp=function(){
 var $=function(id){return document.getElementById(id)};
 var EBB=[10*60*1000,864e5,2*864e5,4*864e5,7*864e5,15*864e5,30*864e5,60*864e5,120*864e5,240*864e5,365*864e5];
 var MAX_STAGE=EBB.length-1;
-var STAGE_LABELS=['新建','10 分','1 天','2 天','4 天','7 天','15 天','30 天','60 天','120 天','1 年'];
+/* 档位标签须与 srsSchedule 实际排出的间隔一致：stage0 仅为答错时的 10 分钟档，
+   stage1 = 1 天、stage2 = 2 天，之后按「上次间隔 × ease」增长（约 5/11/26/61/143/336 天，封顶 1 年） */
+var STAGE_LABELS=['新建','10 分','1 天','2 天','约 5 天','约 11 天','约 1 月','约 2 月','约 5 月','约 11 月','1 年'];
 /* ---------- 自适应间隔（SM-2 风格，取代纯固定间隔表） ----------
    每个词记录记忆因子 r.ease（默认 2.35，范围 1.3~2.8）与上次间隔 r.ivl。
    作答质量 q(3~5) 由耗时与是否用提示决定：越快、无提示得分越高。
@@ -720,8 +722,6 @@ function nearMiss(input,target){
   var d=editDistance(a,b),tol=Math.max(1,Math.min(3,Math.floor(b.length/3)));
   return d<=tol;
 }
-function allowNew(d){return d.baseLv===state.settings.level}
-function priority(d){var r=state.words[d.w];var p=personalLevel(d,r);var struggle=r?((r.productionWrong||0)*2+(r.meaningWrong||0)+(r.hints||0)*0.3):0;var stage=r?(r.stage||0):0;return p*0.6+struggle*0.35+stage*0.05+Math.random()*0.7}
 /* 今日待复习以「最近一次早上 8 点」为界：8 点把过去 24h 内到期的词一次性纳入今日复习，
    其余时间不再刷新；期间新到期的词（含答错回 10 分钟的词）等明天 8 点统一出现 */
 function reviewCutoff(){
@@ -731,24 +731,8 @@ function reviewCutoff(){
   return d.getTime();
 }
 function getDue(){var t=reviewCutoff();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.dueAt<=t}).sort(function(a,b){return (state.words[a].dueAt||0)-(state.words[b].dueAt||0)})}
-function introducedToday(){var t=today(),n=0;Object.keys(state.words).forEach(function(w){var r=state.words[w];if(r.introduced===t&&r.seen>0)n++});return n}
 function todayWords(){var t=today();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.introduced===t})}
 function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
-/* 每日新词额度：始终按当天剩余量计算；「再来一轮」等任何一轮都不会超发新词 */
-function getNewQuota(){return Math.max(0,state.settings.dailyNew-introducedToday())}
-function pickNew(n){if(n<=0)return [];var pool=WORDS.filter(function(d){var r=state.words[d.w];return (!r||!(r.seen>0))&&allowNew(d)});pool.sort(function(a,b){return priority(a)-priority(b)});return pool.slice(0,n).map(function(d){return d.w})}
-function makeQueue(){
-  var q=[];
-  getDue().slice(0,state.settings.reviewLimit).forEach(function(w){q.push({w:w,kind:'review'})});
-  pickNew(getNewQuota()).forEach(function(w){q.push({w:w,kind:'new'})});
-  if(!q.length)return q;
-  /* 墨墨式随机抽查：把今天背过的词穿插进本轮，不与已排入的词重复 */
-  var inq={};q.forEach(function(x){inq[x.w]=1});
-  var pool=shuffle(todayWords().filter(function(w){return !inq[w]}));
-  var nc=Math.min(10,Math.max(2,Math.round(q.length*0.12)),pool.length);
-  pool.slice(0,nc).forEach(function(w){var at=q.length>2?2+Math.floor(Math.random()*(q.length-2)):q.length;q.splice(at,0,{w:w,kind:'check'})});
-  return q;
-}
 /* 把某个词插到队列前方第 gap 个位置；同一单词先移除旧实例，避免同一轮重复出现 */
 function pushAhead(q,item,gap){
   for(var i=q.length-1;i>=0;i--){if(q[i].w===item.w)q.splice(i,1)}
@@ -759,8 +743,11 @@ function pushAhead(q,item,gap){
 /* ---------- session ---------- */
 var lastCtx=null,curCatKey=null,recallSel={band:'PST',count:20,hard:false,mode:'auto'},listSel={mode:'auto'};
 function beginSession(q,msg,ctx){
-  session={queue:q,total:q.length,correct:0,wrong:0,cards:0,lastAutoMode:null,autoBag:null,
+  session={queue:q,total:q.length,initLen:q.length,uniDone:{},uniN:0,lastAutoMode:null,autoBag:null,
     vPure:0,vFar:0,vBig:0,vLate:0,vLost:0,combo:0,maxCombo:0,log:[],ctx:ctx||{type:'list'}};
+  /* 新一轮必须清掉上一轮残留的「答错 3 秒锁定」，否则新卡片开头也会被拦住 */
+  nextLockUntil=0;
+  if(nextTimer){clearInterval(nextTimer);nextTimer=null}
   lastCtx=session.ctx;
   if(session.ctx.hard){session.hp=100;session.hardErr=0;}
   phase='question';showView('study');renderStudy();renderCard();
@@ -777,6 +764,8 @@ function startList(catKey,idx,hard,mode){
   var band=L.band;
   var words=L.words||[];
   mode=mode||listSel.mode||'auto';
+  /* 静音模式下不允许进入听写题型（与回忆模式保持一致的兜底） */
+  if(mode==='listen'&&state.settings.mute)mode='auto';
   if(!words.length){toast('该难度暂无单词');return}
   if(!clearSessionIfAny('当前学习还没完成，重新开始？'))return;
   var q=shuffle(words.map(function(w){var r=state.words[w];return {w:w,kind:(r&&r.seen>0?'review':'new')}}));
@@ -821,6 +810,9 @@ function exitStudy(){
   if(session&&session.queue.length&&!confirm('退出将结束本轮（进度已自动保存），确定退出？'))return;
   var ctx=(session&&session.ctx)||lastCtx||{};
   session=null;phase='question';
+  /* 清掉残留的答错锁定，避免下次进入时开头几秒点不动 */
+  nextLockUntil=0;
+  if(nextTimer){clearInterval(nextTimer);nextTimer=null}
   if(ctx.type==='recall')showView('recall');
   else if(ctx.type==='mistakes')showView('stats');
   else if(ctx.type==='due')showView('home');
@@ -829,13 +821,7 @@ function exitStudy(){
 }
 
 /* ---------- study view ---------- */
-function speakLabel(){return (state.settings.autoSpeak?'自动发音：开':'自动发音：关')+' · '+(state.settings.accent==='uk'?'英音':'美音')}
-function refreshSpeakLabel(){var t=$('speakToggle');if(t)t.textContent=speakLabel()}
 function updatePlan(){refreshPTT()}
-function bindSpeakToggle(){}
-function setMode(m){state.settings.mode=m;save();return true}
-function refreshSegLv(){}
-function bindModeSeg(){}
 function renderStudy(){
   var el=$('view-study');if(!el)return;
   var ctx=(session&&session.ctx)||lastCtx||{};
@@ -848,15 +834,22 @@ function renderStudy(){
   bindGestures();
 }
 /* ---------- 今日待复习（按遗忘曲线到期聚合，以每天早上 8 点为刷新界） ---------- */
+/* 词条归属：r.src 指向的 List 才是它唯一会被复习的地方。
+   若 r.src 失效（词表调整后该 List 已不含此词），回退到第一个包含它的 List，
+   避免出现「统计里算待复习、首页却没有入口」的幽灵词 */
+function ownerListOf(w){
+  var r=state.words[w];if(!r)return null;
+  var src=r.src;
+  if(src&&LIST_BY_KEY[src]&&(LIST_BY_KEY[src].words||[]).indexOf(w)>=0)return src;
+  return (KEYS_OF[w]||[])[0]||null;
+}
 /* 某 List 当前所有到期单词（seen>0 且 dueAt 已过最近一次早上 8 点） */
 function dueWordsOfList(key){
   var L=LIST_BY_KEY[key];if(!L)return [];
   var t=reviewCutoff();
   return (L.words||[]).filter(function(w){
     var r=state.words[w];
-    /* 只统计归属本 List 的记录（r.src），共用词不会重复出现在其他 List 的待复习里 */
-    var src=r&&r.src?r.src:(KEYS_OF[w]||[])[0];
-    return r&&r.seen>0&&(r.dueAt||0)<=t&&src===key;
+    return r&&r.seen>0&&(r.dueAt||0)<=t&&ownerListOf(w)===key;
   });
 }
 /* 聚合出「有到期单词」的 List，按待复习词数从多到少排列 */
@@ -903,27 +896,33 @@ function listHasRecord(key){
   for(var i=0;i<ws.length;i++){var r=state.words[ws[i]];if(r&&r.seen>0)return true}
   return false;
 }
-/* 把某个 List 重置为最初状态：抹除该 List 的成绩、谱面与其中的词条记忆记录 */
+/* 把某个 List 重置为最初状态：抹除该 List 的成绩、谱面，以及「归属本 List」的词条记忆记录。
+   共用词若归属在别的 List，保留其记忆记录，避免误删其他 List 的学习进度 */
 function resetList(key){
   var L=LIST_BY_KEY[key];if(!L){toast('List 不存在');return}
   var words=L.words||[];
   if(state.lists)delete state.lists[key];
   if(state.charts)delete state.charts[key];
-  var cleared=0;
+  var cleared=0,kept=0;
   words.forEach(function(w){
     if(!state.words[w])return;
+    if(ownerListOf(w)!==key){kept++;return}
     delete state.words[w];cleared++;
   });
   save();
   if(curCatKey===L.catKey)renderLists();
-  toast('已重置 '+L.catName+' List '+(L.idx+1)+'：清除 '+cleared+' 词记录');
+  renderHome();
+  toast('已重置 '+L.catName+' List '+(L.idx+1)+'：清除 '+cleared+' 词记录'+(kept?'，保留其他 List 的 '+kept+' 个共用词':''));
 }
-/* 结算页「再过一遍」：用本轮相同的单词与模式重新开始一轮 */
+/* 结算页「再过一遍」：用本轮相同的单词与模式重新开始一轮（滚动复现会产生重复词，此处去重） */
 function restartRound(){
   if(!lastRound)return;
   var ctx=Object.assign({},lastRound.ctx||{});
   delete ctx.__seenEn2zh;   /* 丢弃上一轮的选项去重集合，避免复用导致误判 */
-  var words=(lastRound.log||[]).map(function(x){return x.w}).filter(function(w){return MAP[w]});
+  var seenW={},words=(lastRound.log||[]).map(function(x){return x.w}).filter(function(w){
+    if(!MAP[w]||seenW[w])return false;
+    seenW[w]=1;return true;
+  });
   if(!words.length){toast('没有可重玩的单词');return}
   var q=shuffle(words).map(function(w){var r=state.words[w];return {w:w,kind:(r&&r.seen>0?'review':'new')}});
   beginSession(q,'再过一遍 · '+q.length+' 词',ctx);
@@ -1044,7 +1043,7 @@ function renderLists(){
   el.querySelectorAll('[data-idx]').forEach(function(b){b.onclick=function(){startList(c.k,+b.dataset.idx,ht.checked,listSel.mode)}});
   el.querySelectorAll('[data-reset]').forEach(function(b){b.onclick=function(){
     var i=+b.dataset.reset;
-    if(!confirm('重置「'+c.n+' List '+(i+1)+'」？将抹除该 List 的成绩与该 List 单词的学习记录，且不可恢复。'))return;
+    if(!confirm('重置「'+c.n+' List '+(i+1)+'」？将抹除该 List 的成绩与归属本 List 的单词记录（其他 List 的共用词进度会保留），且不可恢复。'))return;
     resetList(listKey(c.k,i));
   }});
 }
@@ -1112,30 +1111,18 @@ function startCheck(){
   if(!ws.length){toast('今天还没有背过单词');return}
   beginSession(ws.map(function(w){return {w:w,kind:'check'}}),'抽查 '+ws.length+' 个今日单词');
 }
-function renderEmpty(){
-  var c=$('study-card');if(!c)return;
-  var done=state.days[today()]&&state.days[today()].done;
-  c.innerHTML='<div class="finish"><div class="icon">✓</div><h2>今日计划已清空</h2><p>'+(done?'每日任务已达标，今日签到成功。':'每日任务已达到 80% 才会计入签到。')+'没有到期复习，今日新词额度（'+introducedToday()+' / '+state.settings.dailyNew+'）也已用完。想多学新词可到「设置」调高「每日新词」，或先抽查今日已学单词。</p>'+
-   '<div class="actions"><button class="btn ghost" id="extraBtn" type="button">再来一轮</button><button class="btn primary" id="statsBtn" type="button">查看统计</button></div></div>';
-  $('extraBtn').onclick=startExtra;$('statsBtn').onclick=function(){showView('stats')};
-}
-
 /* ---------- card ---------- */
 function renderCard(){
   if(!session){return}
   if(!session.queue.length){finish();return}
   if(!$('study-card'))renderStudy();
   hintUsed=false;   /* 新卡片：重置「本题是否用过提示」 */
-  updatePlan();refreshSpeakLabel();
+  updatePlan();
   var seq=++renderSeq;
   var item=session.queue[0];
   var d=MAP[item.w];
   if(!d){session.queue.shift();return renderCard()}
   var r=userRec(item.w);
-  /* 词条归属：在真实 List 里学习/复习时刷新 r.src（回忆、错题模式不改变归属），
-     保证每个单词只会在其归属 List 的待复习中出现，不跨 List 重复复习 */
-  var _lk=session.ctx?session.ctx.ckey:null;
-  if(_lk&&LIST_BY_KEY[_lk]&&r.src!==_lk)r.src=_lk;
   var isCheck=item.kind==='check',isNew=item.kind==='new';
   var md=cardMode(item);
   var typed=isTypedMode(md);
@@ -1164,9 +1151,15 @@ function renderCard(){
            '<div class="meaning">'+escapeHtml(d.zh)+'</div>'+optsHtml;
     }
   }
+  /* 进度按「已作答过的不同单词 / 本轮初始词数」显示：滚动补卡会让总张数不断增长，
+     若用总张数做分母，进度条会往回跳；这里只统计学过的唯一词，保证单调递增 */
+  var _init=session.initLen||session.total||1;
+  var _done=session.uniN||0;
+  if(!(session.uniDone&&session.uniDone[item.w]))_done++;
+  _done=Math.min(_init,_done);
   $('study-card').innerHTML='<div class="card"><div class="card-top"><div class="pills">'+
      '<span class="pill">'+phLabel+'</span><span class="pill dim">熟练度 '+proficiencyPct(r)+'%</span>'+
-     '</div><span class="phonetic">'+(session.cards+1)+' / '+session.total+'</span></div>'+
+     '</div><span class="phonetic" title="本轮共 '+session.total+' 张（含滚动复现）">'+_done+' / '+_init+' 词</span></div>'+
      body+
      '<div class="answer-tools">'+
        (md==='zh2en'||md==='spell'?'<button class="btn flat" id="listenBtn" type="button">听发音</button>':'')+
@@ -1242,6 +1235,7 @@ function dictInfo(w){
    .catch(function(){return done({audioUS:'',audioUK:'',example:''})});
 }
 function speak(w,accent){
+  if(state.settings.mute)return;   /* 静音模式：自动朗读与手动发音一律不响 */
   if(accent!=='us'&&accent!=='uk')accent=(state.settings.accent==='uk'?'uk':'us');
   var done=false;
   function say(){
@@ -1382,8 +1376,10 @@ function buildOptions(d,md){
   if(md==='en2zh'){
     var lv=+d.baseLv||5,band=bandOf(lv);
     var low=lv<=3,mid=lv>=4&&lv<=6,high=lv>=7;
-    /* 先从 session ctx 里拿本轮已出现过的词 Set（同一张卡不重复，也不跨卡重复） */
-    var seen=(session&&session.ctx&&session.ctx.__seenEn2zh)||(session.ctx.__seenEn2zh=new Set());
+    /* 先从 session ctx 里拿本轮已出现过的词 Set（同一张卡不重复，也不跨卡重复）；
+       没有 session 时退化为一次性 Set，避免空引用 */
+    var _sctx=session?session.ctx:null;
+    var seen=(_sctx&&_sctx.__seenEn2zh)||(_sctx?(_sctx.__seenEn2zh=new Set()):new Set());
     seen.add(d.w);
     /* 候选池：同 band 全部 + 相邻 baseLv 各 ±1 + 形近 + 同词根 + 个人错题
        （同 band 是真实考试里会一起出现的干扰词，权重最高） */
@@ -1412,9 +1408,8 @@ function buildOptions(d,md){
       if(low){s+=(c.pos!==d.pos?3:-3)}
       else if(mid){s+=(c.pos!==d.pos?0.5:1.5)}
       else{s+=(c.pos!==d.pos?0:1.5)}
-      /* 易混特征：中高难度启用 */
+      /* 易混特征：中高难度启用（同义项候选已在上面被排除，此处不再重复判断） */
       if(!low){
-        if(sameMeaning(d.zh,c.zh))s+=2;            /* 共享中文义项，最狠的易混 */
         if(sim.indexOf(c)>=0)s+=1;                  /* 形近 */
         if(root.indexOf(c)>=0)s+=1;                 /* 同词根 */
       }
@@ -1469,27 +1464,36 @@ function submit(force,chosenW){
   if(!session||!session.queue.length||phase!=='question')return;
   var item=session.queue[0],d=MAP[item.w],r=userRec(item.w);
   if(!force&&!chosenW)return;
+  /* 词条归属：真正作答时（而不是渲染卡片时）才把该词判给本 List，
+     回忆 / 错题模式不改变归属。避免只是点进某个 List 就把共用词「搬」过去 */
+  var _lk=session.ctx?session.ctx.ckey:null;
+  if(_lk&&LIST_BY_KEY[_lk]&&r.src!==_lk)r.src=_lk;
   var md=cardMode(item),typed=isTypedMode(md);
   var elapsed=Math.max(0,performance.now()-qStart);
   if(session)session.lastElapsed=elapsed;
   r.seen=(r.seen||0)+1;
   var firstMeet=(r.seen===1);   /* 初识：只做认识，本轮不计入 PTT */
   if(firstMeet)r.introduced=today();
+  session.uniDone=session.uniDone||{};
+  if(!session.uniDone[item.w]){session.uniDone[item.w]=1;session.uniN=(session.uniN||0)+1}
   r.responseMs=(r.responseMs||0)+elapsed;state.totalAnswers++;state.totalSeconds+=elapsed/1000;
   var ok=typed?(!force&&normWord(chosenW)===normWord(item.w)):(!force&&chosenW===item.w);
   var usedHint=hintUsed;   /* 本题是否点过提示：答对记 far、答错记 lost，且记忆率减半 */
   /* PTT：先结算惩罚的时间衰减，再按本次结果更新 */
   r.penalty=effPenalty(r);r.last=Date.now();
   if(ok){
-    if(!usedHint){state.totalCorrect++;session.correct++;}
+    if(!usedHint){state.totalCorrect++;}
     r.correct=(r.correct||0)+1;r.streak=(r.streak||0)+1;r.errStreak=0;
     if(md==='en2zh')r.meaningCorrect=(r.meaningCorrect||0)+1;else r.productionCorrect=(r.productionCorrect||0)+1;
     r.stage=Math.min(MAX_STAGE,(r.stage||0)+1);
     r.dueAt=Date.now()+srsSchedule(r,elapsed,usedHint,true);
     /* 连对越多恢复越快（惩罚按比例回吐） */
     r.penalty=Math.max(0,(r.penalty||0)-0.05*(1+r.streak));
+    /* 熟练度折扣同样可恢复：每答对一次把 memDamp 往 1 拉回一点，
+       否则点过一次提示的词熟练度会永久停在低位 */
+    r.memDamp=Math.min(1,(r.memDamp==null?1:r.memDamp)+0.08);
   }else{
-    session.wrong++;r.errStreak=(r.errStreak||0)+1;
+    r.errStreak=(r.errStreak||0)+1;
     var shield=shieldOf(r); /* 护盾取自「连对」，须在清零前读取 */
     if(md==='en2zh')r.meaningWrong=(r.meaningWrong||0)+1;else r.productionWrong=(r.productionWrong||0)+1;
     r.streak=0;
@@ -1501,7 +1505,6 @@ function submit(force,chosenW){
   /* 用过提示：本题记忆率直接减半（在常规结算之后再打折） */
   if(usedHint)halveMemory(r);
   /* 队列推进：初识词先隔几个词再考一次（复现通过后才解锁 PTT）；其余按对错正常排程 */
-  session.cards++;
   var rec=session.queue.shift();
   /* 滚动背单词：初识词隔几个词再「复现」确认一次；答错的词隔几个词再考一遍，
      直到答对为止。每次补卡都会计入 session.total（总分母），每次作答各得一个判定，
@@ -2092,7 +2095,13 @@ function sbRestore(){
 }
 function sbPull(){return loadSB().then(function(sb){return sb.from(SB.table).select('data,updated_at').eq('user_id',sbUser.id).maybeSingle()})}
 function sbPush(){return loadSB().then(function(sb){return sb.from(SB.table).upsert({user_id:sbUser.id,data:state,updated_at:new Date().toISOString()})})}
-function applyRemote(data){state=normalize(data);persistLocal();session=null;renderAll();}
+/* 云端数据落地后的刷新：正在背单词时不打断这一轮（只刷新头部指标），
+   否则才回到首页。避免自动同步把用户从学习界面弹出去。 */
+function refreshAfterRemote(){
+  if(session&&session.queue.length){refreshStreak();refreshSyncDot();return}
+  session=null;renderAll();
+}
+function applyRemote(data){state=normalize(data);persistLocal();refreshAfterRemote();}
 /* 单条记录的「进度分」：以记忆阶段为主，正确率与练习量为辅，用于合并时择优 */
 function recProgress(r){r=r||{};return (r.stage||0)*1e9+((r.correct||0)*1e6)+(r.seen||0)*1e3+((r.last||0)/1e6)}
 /* 合并本机与云端两边的存档：逐词取进度更高的一条，每日/总计取较大值，历史去重合并。
@@ -2170,7 +2179,7 @@ function cloudSyncSmart(silent){
     if(remote&&remoteAt>localAt+2000){
       /* 不用云端整份覆盖本机：按单词/每日进度逐条合并，避免多设备互相「冲掉」存档 */
       var merged=mergeState(state,remote.data);merged.sync.lastAt=remoteAt;
-      state=merged;persistLocal();session=null;renderAll();refreshSyncDot();
+      state=merged;persistLocal();refreshAfterRemote();refreshSyncDot();
       if(!silent)toast('已合并云端与本机进度');
       cloudPush(true);
       return true;
@@ -2263,12 +2272,29 @@ function migrateSrc(){
   });
   if(changed){save();toast('已为 '+changed+' 个单词标记所属 List，修复跨 List 重复复习')}
 }
+/* 一次性修复：旧版滚动计分 bug 曾把负分写进存档（如「最高 −6,666,594」）。
+   这里把 List 成绩与谱面记录中的负分归零，避免这些脏数据一直显示到该 List 被重背。 */
+function migrateScores(){
+  var fixed=0;
+  function fix(o,k){
+    if(!o)return;
+    var r=o[k];if(!r)return;
+    ['score','bestScore','potential'].forEach(function(f){
+      if(r[f]!=null&&+r[f]<0){r[f]=0;fixed++}
+    });
+  }
+  Object.keys(state.lists||{}).forEach(function(k){fix(state.lists,k)});
+  Object.keys(state.charts||{}).forEach(function(k){fix(state.charts,k)});
+  (state.rounds||[]).forEach(function(x){if(x&&+x.v<0){x.v=0;fixed++}});
+  if(fixed){save();toast('已修正 '+fixed+' 处异常（负数）成绩')}
+}
 function renderAll(){renderStreak();session=null;showView('home')}
 function boot(){
   try{
     if(!WORDS.length)throw new Error('词库为空');
     buildIndex();
     migrateSrc();
+    migrateScores();
     renderStreak();
     showView('home');
     toast('词库已就绪 · '+WORDS.length.toLocaleString()+' 词');
