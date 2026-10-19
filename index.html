@@ -839,7 +839,7 @@ function bindModeSeg(){}
 function renderStudy(){
   var el=$('view-study');if(!el)return;
   var ctx=(session&&session.ctx)||lastCtx||{};
-  var title=ctx.type==='recall'?('回忆模式 · '+ctx.band):ctx.type==='mistakes'?('错题强化 · '+((session&&session.total)||0)+' 词'):(ctx.catName?(ctx.v!=null?ctx.catName+' · '+dispDiff(ctx.v):ctx.catName):'学习');
+  var title=ctx.type==='recall'?('回忆模式 · '+ctx.band):ctx.type==='mistakes'?('错题强化 · '+((session&&session.total)||0)+' 词'):(ctx.catName?(ctx.catName+' · List '+((ctx.idx||0)+1)+(ctx.v!=null?' · '+dispDiff(ctx.v):'')):'学习');
   var bandTag=ctx.band?'<span class="bandtag cat-'+ctx.band+'">'+ctx.band+'</span>':'';
   var hardBadge=ctx.hard?'<span class="settle-hard">困难</span>':'';
   var hp=ctx.hard?'<div class="hp-wrap"><div class="hp-bar"><i id="hpFill" style="width:'+((session&&session.hp!=null)?session.hp:100)+'%"></i></div></div>':'';
@@ -885,7 +885,7 @@ function dueListsHtml(){
         '<button class="btn primary due-go" data-due="'+escapeHtml(x.key)+'" type="button">复习</button></div>';
     }).join('')+'</div>';
 }
-/* 复习某个 List 的全部到期单词（不写谱面、不进 PTT，但成绩计入该 List 并参与最高成绩） */
+/* 复习某个 List 的全部到期单词（成绩、谱面与 Potential 统计均计入该 List，SP 无难度不入统计） */
 function startDueList(key){
   var L=LIST_BY_KEY[key];if(!L){toast('List 不存在');return}
   var words=dueWordsOfList(key);
@@ -1707,13 +1707,11 @@ function finish(){
   var diff=+ctx.v||0;
   var potential=chartPotential(diff,score);
   lastRound={log:log,cards:total,vP:vP,vF:vF,vL:vL,vBig:vBig,vLate:vLate,maxCombo:maxCombo,score:score,grade:grade,tier:tier,potential:potential,ctx:ctx,hard:!!ctx.hard,failed:failed};
-  /* 记录本轮成绩：list 模式写入对应谱面，回忆模式写入 recall 谱面并保留最近 10 次；
-     到期复习（due）也计入该 List 的成绩与最高成绩，但不写谱面、不进 PTT */
+  /* 记录本轮成绩：list 与到期复习（due）同权——写入对应谱面、计入 Potential 统计（SP 无难度不入），
+     并写入该 List 成绩与最高成绩；回忆模式写入 recall 谱面并保留最近 10 次 */
   if((ctx.type==='list'||ctx.type==='due')&&ctx.ckey){
-    if(ctx.type==='list'){
-      recordChart(ctx.ckey,{key:ctx.ckey,label:ctx.catName+' List '+((ctx.idx||0)+1)+' · '+band,potential:potential,score:score,tier:tier,grade:grade,band:band,diff:diff,nodiff:!!ctx.nodiff,at:Date.now()});
-      if(!ctx.nodiff)pushRound(potential);
-    }
+    recordChart(ctx.ckey,{key:ctx.ckey,label:ctx.catName+' List '+((ctx.idx||0)+1)+' · '+band,potential:potential,score:score,tier:tier,grade:grade,band:band,diff:diff,nodiff:!!ctx.nodiff,at:Date.now()});
+    if(!ctx.nodiff)pushRound(potential);
     state.lists=state.lists||{};
     var prevL=state.lists[ctx.ckey];
     var prevBestL=prevL?(prevL.bestScore!=null?prevL.bestScore:(prevL.score||0)):0;
