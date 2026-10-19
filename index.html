@@ -885,7 +885,7 @@ function dueListsHtml(){
         '<button class="btn primary due-go" data-due="'+escapeHtml(x.key)+'" type="button">复习</button></div>';
     }).join('')+'</div>';
 }
-/* 复习某个 List 的全部到期单词（纯复习，不写入谱面成绩/PTT） */
+/* 复习某个 List 的全部到期单词（不写谱面、不进 PTT，但成绩计入该 List 并参与最高成绩） */
 function startDueList(key){
   var L=LIST_BY_KEY[key];if(!L){toast('List 不存在');return}
   var words=dueWordsOfList(key);
@@ -1707,10 +1707,13 @@ function finish(){
   var diff=+ctx.v||0;
   var potential=chartPotential(diff,score);
   lastRound={log:log,cards:total,vP:vP,vF:vF,vL:vL,vBig:vBig,vLate:vLate,maxCombo:maxCombo,score:score,grade:grade,tier:tier,potential:potential,ctx:ctx,hard:!!ctx.hard,failed:failed};
-  /* 记录本轮成绩：list 模式写入对应谱面，回忆模式写入 recall 谱面并保留最近 10 次 */
-  if(ctx.type==='list'&&ctx.ckey){
-    recordChart(ctx.ckey,{key:ctx.ckey,label:ctx.catName+' List '+((ctx.idx||0)+1)+' · '+band,potential:potential,score:score,tier:tier,grade:grade,band:band,diff:diff,nodiff:!!ctx.nodiff,at:Date.now()});
-    if(!ctx.nodiff)pushRound(potential);
+  /* 记录本轮成绩：list 模式写入对应谱面，回忆模式写入 recall 谱面并保留最近 10 次；
+     到期复习（due）也计入该 List 的成绩与最高成绩，但不写谱面、不进 PTT */
+  if((ctx.type==='list'||ctx.type==='due')&&ctx.ckey){
+    if(ctx.type==='list'){
+      recordChart(ctx.ckey,{key:ctx.ckey,label:ctx.catName+' List '+((ctx.idx||0)+1)+' · '+band,potential:potential,score:score,tier:tier,grade:grade,band:band,diff:diff,nodiff:!!ctx.nodiff,at:Date.now()});
+      if(!ctx.nodiff)pushRound(potential);
+    }
     state.lists=state.lists||{};
     var prevL=state.lists[ctx.ckey];
     var prevBestL=prevL?(prevL.bestScore!=null?prevL.bestScore:(prevL.score||0)):0;
@@ -1726,9 +1729,11 @@ function finish(){
   var c=$('study-card');if(!c)return;
   var title=tier==='pure'?'Pure Memory':tier==='full'?'Full Recall':tier==='complete'?'Track Complete':'Track Lost';
   var mark=gradeFromTier(tier);
-  var bestScore=(ctx.ckey&&state.charts[ctx.ckey])?Number(state.charts[ctx.ckey].bestScore||state.charts[ctx.ckey].score||0):score;
+  /* 最高成绩：优先取本 List 已写入的成绩记录（到期复习同样计入），否则回退谱面 */
+  var bestRec=(ctx.ckey&&state.lists&&state.lists[ctx.ckey])?state.lists[ctx.ckey]:((ctx.ckey&&state.charts[ctx.ckey])||null);
+  var bestScore=bestRec?Number(bestRec.bestScore||bestRec.score||0):score;
   if(bestScore<score)bestScore=score;
-  var bestLine=ctx.type==='list'?'<div class="settle-best">最高成绩 '+bestScore.toLocaleString()+'</div>':'';
+  var bestLine=(ctx.type==='list'||ctx.type==='due')?'<div class="settle-best">最高成绩 '+bestScore.toLocaleString()+'</div>':'';
   var hardBadge=(ctx.hard&&!failed)?'<span class="settle-hard">困难</span>':'';
   var modeLabelShort=(ctx.mode&&ctx.mode!=='auto')?modeLabel(ctx.mode).split(' · ')[0]:'混合';
   var where=ctx.type==='recall'?('回忆 '+band):(ctx.catName?ctx.catName+' · List '+((ctx.idx||0)+1):'');
