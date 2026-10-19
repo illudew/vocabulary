@@ -846,7 +846,9 @@ function dueWordsOfList(key){
   var t=Date.now();
   return (L.words||[]).filter(function(w){
     var r=state.words[w];
-    return r&&r.seen>0&&(r.dueAt||0)<=t;
+    /* 只统计归属本 List 的记录（r.src），共用词不会重复出现在其他 List 的待复习里 */
+    var src=r&&r.src?r.src:(KEYS_OF[w]||[])[0];
+    return r&&r.seen>0&&(r.dueAt||0)<=t&&src===key;
   });
 }
 /* 聚合出「有到期单词」的 List，按待复习词数从多到少排列 */
@@ -883,7 +885,7 @@ function startDueList(key){
   if(!clearSessionIfAny('当前学习还没完成，重新开始？'))return;
   var q=shuffle(words).map(function(w){return {w:w,kind:'review'}});
   beginSession(q,'复习到期 · '+L.catName+' List '+(L.idx+1)+' · '+q.length+' 词',
-    {type:'due',catKey:L.catKey,catName:L.catName,idx:L.idx,key:key,band:L.band,v:L.diff==null?null:L.diff,nodiff:!!L.nodiff,mode:listSel.mode||'auto'});
+    {type:'due',catKey:L.catKey,catName:L.catName,idx:L.idx,key:key,ckey:key,band:L.band,v:L.diff==null?null:L.diff,nodiff:!!L.nodiff,mode:listSel.mode||'auto'});
 }
 /* 该 List 是否有可重置的数据（成绩 / 谱面 / 词条记忆记录） */
 function listHasRecord(key){
@@ -1122,6 +1124,10 @@ function renderCard(){
   var d=MAP[item.w];
   if(!d){session.queue.shift();return renderCard()}
   var r=userRec(item.w);
+  /* 词条归属：在真实 List 里学习/复习时刷新 r.src（回忆、错题模式不改变归属），
+     保证每个单词只会在其归属 List 的待复习中出现，不跨 List 重复复习 */
+  var _lk=session.ctx?session.ctx.ckey:null;
+  if(_lk&&LIST_BY_KEY[_lk]&&r.src!==_lk)r.src=_lk;
   var isCheck=item.kind==='check',isNew=item.kind==='new';
   var md=cardMode(item);
   var typed=isTypedMode(md);
@@ -2200,11 +2206,31 @@ document.addEventListener('keydown',function(e){
 });
 
 /* ---------- boot ---------- */
+/* 一次性迁移：为旧存档的词条记录补写归属 List（r.src）。
+   共用词归属到「已学词数最多」的所在 List——即用户真正在学的那个 List，
+   避免旧数据把没背过的 List 也算进今日待复习。 */
+function migrateSrc(){
+  var studied={},changed=0;
+  Object.keys(LIST_BY_KEY).forEach(function(k){studied[k]=0});
+  Object.keys(state.words).forEach(function(w){
+    var r=state.words[w];if(!(r&&r.seen>0))return;
+    (KEYS_OF[w]||[]).forEach(function(k){if(studied[k]!=null)studied[k]++});
+  });
+  Object.keys(state.words).forEach(function(w){
+    var r=state.words[w];if(!r||r.src)return;
+    var ks=KEYS_OF[w]||[];if(!ks.length)return;
+    var best=ks[0],bestN=-1;
+    ks.forEach(function(k){if(studied[k]>bestN){bestN=studied[k];best=k}});
+    r.src=best;changed++;
+  });
+  if(changed){save();toast('已为 '+changed+' 个单词标记所属 List，修复跨 List 重复复习')}
+}
 function renderAll(){renderStreak();session=null;showView('home')}
 function boot(){
   try{
     if(!WORDS.length)throw new Error('词库为空');
     buildIndex();
+    migrateSrc();
     renderStreak();
     showView('home');
     toast('词库已就绪 · '+WORDS.length.toLocaleString()+' 词');
