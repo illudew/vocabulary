@@ -124,9 +124,11 @@ button{cursor:pointer}
 .settle-eyebrow{font-size:10.5px;letter-spacing:3px;color:#7f8ba1}
 .settle-title{font-size:31px;font-weight:800;letter-spacing:.5px;margin:9px 0 7px}
 .settle-sub{font-size:12.5px;color:#8b95a6;margin-bottom:20px;line-height:1.6}
-.settle-stats{display:flex;justify-content:center;gap:30px;margin-bottom:18px}
+.settle-stats{display:flex;justify-content:center;gap:30px;margin-bottom:18px;flex-wrap:wrap}
 .settle-stats b{display:block;font-size:23px;font-weight:750}
 .settle-stats b.small{font-size:16px;letter-spacing:.3px}
+/* 「六级 · List 8 PRS 5」：谱面名 + 同色的难度徽标，放在同一行 */
+.settle-stats b.settle-chart{font-size:14.5px;letter-spacing:.2px;font-weight:750}
 /* 难度档位配色：PST 蓝 / PRS 绿 / FTR 紫 / BYD 红 / 专有名词 金 */
 .cat-PST,.cat-PRS,.cat-FTR,.cat-BYD,.cat-SP{text-shadow:0 0 10px currentColor}
 .cat-PST{color:#4f8cff}
@@ -134,7 +136,8 @@ button{cursor:pointer}
 .cat-FTR{color:#b892ff}
 .cat-BYD{color:#ff6b6b}
 .cat-SP{color:#ffce4d}
-.settle-stats span{font-size:10.5px;color:#6f7a8c}
+/* 只给「数值下方的说明文字」上灰，不要波及嵌在数值里的难度徽标 */
+.settle-stats div>span{font-size:10.5px;color:#6f7a8c}
 .settle-note{font-size:11px;color:#6f7a8c;margin-bottom:18px}
 .settle-verdicts{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-bottom:16px}
 .settle-verdicts .vs{font-size:12px;font-weight:700;letter-spacing:.5px;padding:4px 12px;border-radius:999px;border:1px solid #2a313d;background:#161b23}
@@ -256,6 +259,7 @@ button{cursor:pointer}
 .crumb{display:flex;align-items:center;gap:10px;margin:2px 0 14px;flex-wrap:wrap}
 .crumb button.back{background:none;border:1px solid #2b3340;color:#9fb0c6;border-radius:10px;padding:6px 12px;font-size:12.5px;cursor:pointer}
 .crumb .crumb-t{font-size:18px;font-weight:750}
+.crumb .bandtag{font-size:13px}
 .crumb .crumb-s{font-size:11px;color:#7f8ba1}
 .cat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .cat-card{background:#12161d;border:1px solid #232a35;border-radius:14px;padding:14px;cursor:pointer;color:#eef2f7;text-align:left;transition:.15s}
@@ -825,8 +829,10 @@ function updatePlan(){refreshPTT()}
 function renderStudy(){
   var el=$('view-study');if(!el)return;
   var ctx=(session&&session.ctx)||lastCtx||{};
-  var title=ctx.type==='recall'?('回忆模式 · '+ctx.band):ctx.type==='mistakes'?('错题强化 · '+((session&&session.total)||0)+' 词'):(ctx.catName?(ctx.catName+' · List '+((ctx.idx||0)+1)+(ctx.v!=null?' · '+dispDiff(ctx.v):'')):'学习');
-  var bandTag=ctx.band?'<span class="bandtag cat-'+ctx.band+'">'+ctx.band+'</span>':'';
+  /* 标题固定为「六级 · List 8」，难度（PRS）与难度值（5）合并为一个同色徽标接在后面 */
+  var title=ctx.type==='recall'?'回忆模式':ctx.type==='mistakes'?('错题强化 · '+((session&&session.total)||0)+' 词'):(ctx.catName?(ctx.catName+' · List '+((ctx.idx||0)+1)):'学习');
+  var diffTxt=((ctx.type==='list'||ctx.type==='due')&&ctx.v!=null)?(' '+dispDiff(ctx.v)):'';
+  var bandTag=ctx.band?'<span class="bandtag cat-'+ctx.band+'">'+escapeHtml(ctx.band+diffTxt)+'</span>':'';
   var hardBadge=ctx.hard?'<span class="settle-hard">困难</span>':'';
   var hp=ctx.hard?'<div class="hp-wrap"><div class="hp-bar"><i id="hpFill" style="width:'+((session&&session.hp!=null)?session.hp:100)+'%"></i></div></div>':'';
   el.innerHTML='<div class="crumb"><button class="back" id="studyBack" type="button">← 返回</button><span class="crumb-t">'+escapeHtml(title)+'</span>'+bandTag+hardBadge+'</div>'+hp+'<div id="study-card"></div>';
@@ -1750,12 +1756,15 @@ function finish(){
   var bestLine=(ctx.type==='list'||ctx.type==='due')?'<div class="settle-best">最高成绩 '+bestScore.toLocaleString()+'</div>':'';
   var hardBadge=(ctx.hard&&!failed)?'<span class="settle-hard">困难</span>':'';
   var modeLabelShort=(ctx.mode&&ctx.mode!=='auto')?modeLabel(ctx.mode).split(' · ')[0]:'混合';
-  var where=ctx.type==='recall'?('回忆 '+band):(ctx.catName?ctx.catName+' · List '+((ctx.idx||0)+1):'');
+  /* 谱面名 + 同色难度徽标：与学习页标题保持一致（六级 · List 8 PRS 5） */
+  var where=ctx.type==='recall'?'回忆':(ctx.catName?ctx.catName+' · List '+((ctx.idx||0)+1):'');
+  var chartVal=((ctx.type==='list'||ctx.type==='due')&&ctx.v!=null)?dispDiff(ctx.v):mark;
+  var chartStat='<div><b class="settle-chart">'+(where?escapeHtml(where)+' ':'')+'<span class="cat-'+escapeHtml(band)+'">'+escapeHtml(band+' '+chartVal)+'</span></b><span>'+(where?'谱面':'评级')+'</span></div>';
   c.innerHTML='<div class="settle '+tier+'">'+
    '<div class="settle-eyebrow">ROUND RESULT</div>'+
    '<div class="settle-title">'+title+hardBadge+'</div>'+
    '<div class="settle-score"><b>'+(failed?'0':score.toLocaleString())+'</b><span class="grade '+gradeClass(grade)+'">'+(failed?'—':grade)+'</span></div>'+
-   '<div class="settle-stats"><div><b class="small cat-'+escapeHtml(band)+'">'+escapeHtml(band+' '+mark)+'</b><span>'+(where?escapeHtml(where):'评级')+'</span></div><div><b>'+total+'</b><span>单词</span></div><div><b>'+acc+'%</b><span>正确率</span></div></div>'+
+   '<div class="settle-stats">'+chartStat+'<div><b>'+total+'</b><span>单词</span></div><div><b>'+acc+'%</b><span>正确率</span></div></div>'+
    '<div class="settle-meta"><span><b>'+maxCombo+'</b>MAX COMBO</span><span><b>'+vLate+'</b>记为 Late</span><span><b>'+potential.toFixed(2)+'</b>谱面潜力</span><span><b>'+escapeHtml(modeLabelShort)+'</b>题型</span></div>'+
    bestLine+
    '<div class="settle-verdicts"><span class="vs pure">pure<b>'+vP+'</b></span><span class="vs far">far<b>'+vF+'</b></span><span class="vs lost">lost<b>'+vL+'</b></span></div>'+
