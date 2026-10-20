@@ -548,7 +548,7 @@ function normalize(o){
   var recall=Array.isArray(o.recall)?o.recall.filter(function(x){return x&&x.d}).slice(-10):[];
   var charts=(o.charts&&typeof o.charts==='object'&&!Array.isArray(o.charts))?o.charts:{};
   var rounds=Array.isArray(o.rounds)?o.rounds.filter(function(x){return x&&isFinite(+x.v)}).slice(-200):[];
-  return {schema:2,settings:st,words:ws,days:days,streak:Object.assign({},DEFAULT.streak,(o.streak&&typeof o.streak==='object')?o.streak:{}),totalAnswers:+o.totalAnswers||0,totalCorrect:+o.totalCorrect||0,totalSeconds:+o.totalSeconds||0,recent:rec,pttHistory:hist,rounds:rounds,lists:lists,charts:charts,recall:recall,sync:Object.assign({auto:true,lastAt:0},(o.sync&&typeof o.sync==='object')?o.sync:{})};
+  return {schema:2,settings:st,words:ws,days:days,streak:Object.assign({},DEFAULT.streak,(o.streak&&typeof o.streak==='object')?o.streak:{}),totalAnswers:+o.totalAnswers||0,totalCorrect:+o.totalCorrect||0,totalSeconds:+o.totalSeconds||0,recent:rec,pttHistory:hist,rounds:rounds,lists:lists,charts:charts,recall:recall,ownershipV:+o.ownershipV||0,sync:Object.assign({auto:true,lastAt:0},(o.sync&&typeof o.sync==='object')?o.sync:{})};
 }
 /* 统一写档：先写主档，成功后把「上一次的主档」转存为备份；写满则瘦身重试，仍失败会明确提示（绝不静默丢档） */
 function writeState(noSync){
@@ -834,14 +834,28 @@ function renderStudy(){
   bindGestures();
 }
 /* ---------- 今日待复习（按遗忘曲线到期聚合，以每天早上 8 点为刷新界） ---------- */
-/* 词条归属：r.src 指向的 List 才是它唯一会被复习的地方。
-   若 r.src 失效（词表调整后该 List 已不含此词），回退到第一个包含它的 List，
-   避免出现「统计里算待复习、首页却没有入口」的幽灵词 */
+/* 词条归属（唯一规则）：r.src 指向的 List 才是它「唯一」会被复习的地方。
+   这里不再做「第一个包含该词的 List」之类的兜底——那种猜测会把词丢进没背过的 List。
+   src 无效时返回 null（视为未归属：不进入任何 List 的待复习，等下次在某个 List 正式作答时再定）。 */
 function ownerListOf(w){
   var r=state.words[w];if(!r)return null;
   var src=r.src;
-  if(src&&LIST_BY_KEY[src]&&(LIST_BY_KEY[src].words||[]).indexOf(w)>=0)return src;
-  return (KEYS_OF[w]||[])[0]||null;
+  return (src&&LIST_BY_KEY[src]&&(LIST_BY_KEY[src].words||[]).indexOf(w)>=0)?src:null;
+}
+/* List 的「学习权重」= 该 List 里已学过的词数；没有任何成绩记录（没真正背过）则返回 -1，
+   用于纠正早期版本把共用词误判给没背过的 List */
+function listLearnCount(key){
+  var L=LIST_BY_KEY[key];if(!L)return 0;
+  var ws=L.words||[],n=0;
+  for(var i=0;i<ws.length;i++){var r=state.words[ws[i]];if(r&&r.seen>0)n++}
+  return n;
+}
+/* 注意：只用「该 List 是否有成绩记录」判断是否真的背过。
+   不能用「有词归属在这里」作为证据——那等于让早期的误归属自我合法化。 */
+function listWeight(key){
+  var rec=(state.lists||{})[key];
+  if(!rec)return -1;
+  return listLearnCount(key);
 }
 /* 某 List 当前所有到期单词（seen>0 且 dueAt 已过最近一次早上 8 点） */
 function dueWordsOfList(key){
@@ -1829,7 +1843,7 @@ function forecastHtml(cur){
 }
 function renderStats(){
   var learned=0;
-  var due=getDue().length;
+  var due=getDue().filter(function(w){return ownerListOf(w)}).length;   /* 只统计有归属、可在首页复习的词 */
   var stageDist=new Array(MAX_STAGE+1).fill(0);
   var diffDist=new Array(PROP_LV+1).fill(0);
   var weak=[],lvSum=0,profSum=0;
@@ -2253,24 +2267,43 @@ document.addEventListener('keydown',function(e){
 });
 
 /* ---------- boot ---------- */
-/* 一次性迁移：为旧存档的词条记录补写归属 List（r.src）。
-   共用词归属到「已学词数最多」的所在 List——即用户真正在学的那个 List，
-   避免旧数据把没背过的 List 也算进今日待复习。 */
-function migrateSrc(){
-  var studied={},changed=0;
-  Object.keys(LIST_BY_KEY).forEach(function(k){studied[k]=0});
+/* 一次性归属校正（ownershipV < 2 时执行）：
+   旧版本按「哪个 List 含有的已学词更多」来猜归属，会把在六级背的词猜给小学等没背过的 List；
+   这里按「该 List 是否真的背过 + 已学词数」重新判定：
+     · 归属 List 必须真的有过成绩记录（listWeight ≥ 0），没背过的 List 一律不能成为归属；
+     · 当前归属指向没背过的 List，或另一候选 List 的学习权重高出 3 倍以上 → 判定为误归属并纠正；
+     · 找不到任何背过的候选 List → 清空归属（不进入任何 List 的待复习，等下次在某个 List 正式作答时再定）。 */
+function repairOwnership(){
+  if((+state.ownershipV||0)>=2)return;
+  var moved=0,cleared=0;
   Object.keys(state.words).forEach(function(w){
-    var r=state.words[w];if(!(r&&r.seen>0))return;
-    (KEYS_OF[w]||[]).forEach(function(k){if(studied[k]!=null)studied[k]++});
-  });
-  Object.keys(state.words).forEach(function(w){
-    var r=state.words[w];if(!r||r.src)return;
+    var r=state.words[w];if(!r||!(r.seen>0))return;
     var ks=KEYS_OF[w]||[];if(!ks.length)return;
-    var best=ks[0],bestN=-1;
-    ks.forEach(function(k){if(studied[k]>bestN){bestN=studied[k];best=k}});
-    r.src=best;changed++;
+    var cur=ownerListOf(w);
+    var best=null,bestW=-1;
+    ks.forEach(function(k){
+      var wt=listWeight(k);
+      if(wt<0)return;                       /* 没背过的 List 直接排除 */
+      if(wt>bestW){bestW=wt;best=k}
+    });
+    if(!cur){
+      if(best){r.src=best;moved++}else if(r.src){delete r.src;cleared++}
+      return;
+    }
+    var curW=listWeight(cur);
+    if(curW<0){
+      /* 归属指向的 List 根本没有成绩记录（没真正背过）→ 交给背过的候选 List，没有就置为待定 */
+      if(best){r.src=best;moved++}else{delete r.src;cleared++}
+      return;
+    }
+    if(best&&best!==cur&&bestW>curW){r.src=best;moved++}   /* 交给「真正背过的那个 List 里学习量最大」的 */
   });
-  if(changed){save();toast('已为 '+changed+' 个单词标记所属 List，修复跨 List 重复复习')}
+  state.ownershipV=2;
+  save();   /* 无论是否有改动都落盘标记，避免每次启动重复校正 */
+  if(moved||cleared){
+    renderHome();
+    toast('已重新归属 '+moved+' 个单词'+(cleared?'，'+cleared+' 个待定':'')+'（不再出现在没背过的 List）');
+  }
 }
 /* 一次性修复：旧版滚动计分 bug 曾把负分写进存档（如「最高 −6,666,594」）。
    这里把 List 成绩与谱面记录中的负分归零，避免这些脏数据一直显示到该 List 被重背。 */
@@ -2293,11 +2326,12 @@ function boot(){
   try{
     if(!WORDS.length)throw new Error('词库为空');
     buildIndex();
-    migrateSrc();
-    migrateScores();
     renderStreak();
     showView('home');
     toast('词库已就绪 · '+WORDS.length.toLocaleString()+' 词');
+    /* 一次性数据校正放在首屏之后执行：有修复时会覆盖上面的提示，让用户看到结果 */
+    repairOwnership();
+    migrateScores();
     refreshSyncDot();
     restoreCloud();
     checkReminder();
