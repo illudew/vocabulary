@@ -500,8 +500,8 @@ var STORE_BAK='words_v7_bak';
 var MODES=['auto','en2zh','zh2en','spell','listen'];
 /* 背单词固定题型序列：初次=英译汉；后续在下列题型中随机混合 */
 var AUTO_REVIEW_MODES=['zh2en','spell','listen','clozeFill'];
-/* 初识（首次认识）后，隔 6–12 个词再次出现做确认考核 */
-var FIRST_GAP_MIN=6,FIRST_GAP_SPAN=7,REVIEW_GAP_MIN=4,REVIEW_GAP_SPAN=5;
+/* 初识（首次认识）后与答错后，均隔 0–12 个词再次出现做确认考核 */
+var FIRST_GAP_MIN=0,FIRST_GAP_SPAN=13,REVIEW_GAP_MIN=0,REVIEW_GAP_SPAN=13;
 function firstGap(){return FIRST_GAP_MIN+Math.floor(Math.random()*FIRST_GAP_SPAN)}
 function reviewGap(){return REVIEW_GAP_MIN+Math.floor(Math.random()*REVIEW_GAP_SPAN)}
 /* Potential 模型参数：对数总量制 —— ptt = 5·log10(100×Σ(熟练度×等级)/55000)，下限 0 */
