@@ -2494,18 +2494,28 @@ registerSW();
     if(box){box.textContent=msg;box.classList.remove('hidden')}
     if(ld&&ld.parentNode)ld.parentNode.removeChild(ld);
   }
-  fetch('words.json').then(function(r){
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(function(d){
+  function get(url,opt){
+    return fetch(url,opt).then(function(r){
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return r.json();
+    });
+  }
+  function loadWords(){
+    /* 优先带时间戳直取网络，绕过 HTTP 缓存与旧 Service Worker 缓存；
+       失败（如离线）再回退到普通地址，由 SW 缓存兜底 */
+    return get('words.json?v='+Date.now(),{cache:'no-store'})
+      .catch(function(){return get('words.json')});
+  }
+  loadWords().then(function(d){
     window.WORDS_BANK=(d&&d.words)||[];
     window.EXAM_LISTS=(d&&d.examLists)||[];
     if(!window.WORDS_BANK.length)throw new Error('词库为空');
+    if(!window.EXAM_LISTS.length)throw new Error('词库分类数据缺失（examLists）');
     if(ld&&ld.parentNode)ld.parentNode.removeChild(ld);
     window.__startApp();
   }).catch(function(e){
     var m=(e&&e.message)||e;
-    fail('词库加载失败：'+m+'。请通过 http(s) 访问（本地可运行 python3 -m http.server 8080），并确认 words.json 存在。');
+    fail('词库加载失败：'+m+'。请检查网络后刷新；仍失败可清除本站缓存再试。');
   });
 })();
 </script>
