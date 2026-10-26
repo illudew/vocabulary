@@ -36,7 +36,7 @@ html[data-theme="light"]{
   --chip:#eef2f9;--chip-2:#e4e9f2;--deep:#f7f9fc;--hover:#eaf1ff;
   --border:#dbe2ee;--border-2:#d4dcea;--line:#e8edf5;
   --fg:#141c2b;--fg-strong:#0b1220;--fg-2:#33415a;--fg-3:#4c5a72;--fg-4:#6b7891;
-  --accent:#2f6fe0;--accent-fg:#2563eb;--ok:#12a150;--ok-fg:#0f8a44;--bad:#dc2626;--bad-fg:#c81e1e;--warn:#b45309;--warn-fg:#a16207;--purple:#7c3aed;
+  --accent:#2f6fe0;--accent-fg:#2563eb;--ok:#12a150;--ok-fg:#0f8a44;--bad:#dc2626;--bad-fg:#c81e1e;--warn:#e8b100;--warn-fg:#c08a00;--purple:#7c3aed;
   --hp-bg:#fde8e8;--hp-border:#f6c9c9;
   --ok-strong:#16a34a;--ok-bg:#dcfce7;--ok-ring:rgba(22,163,74,.15);
   --bad-strong:#dc2626;--bad-bg:#fee2e2;--bad-ring:rgba(220,38,38,.15);
@@ -383,19 +383,20 @@ html[data-theme="light"] .cat-PST{color:#2563eb}
 html[data-theme="light"] .cat-PRS{color:#0f9d58}
 html[data-theme="light"] .cat-FTR{color:#7c3aed}
 html[data-theme="light"] .cat-BYD{color:#dc2626}
-html[data-theme="light"] .cat-SP{color:#b45309}
+html[data-theme="light"] .cat-SP{color:#e8b100}
+html[data-theme="light"] .cat-PST,html[data-theme="light"] .cat-PRS,html[data-theme="light"] .cat-FTR,html[data-theme="light"] .cat-BYD,html[data-theme="light"] .cat-SP{text-shadow:none}
 html[data-theme="light"] .feedback.ok,html[data-theme="light"] .reveal-row.ok .rw,html[data-theme="light"] .finish .icon,html[data-theme="light"] .day.on .v{color:#0f8a44}
 html[data-theme="light"] .feedback.bad,html[data-theme="light"] .reveal-row.bad .rw{color:#c81e1e}
 html[data-theme="light"] .verdict.pure .vd-main{color:#2563eb;text-shadow:0 0 18px rgba(37,99,235,.3)}
 html[data-theme="light"] .verdict.lost .vd-main{color:#dc2626;text-shadow:0 0 18px rgba(220,38,38,.3)}
-html[data-theme="light"] .verdict.far .vd-main{color:#b45309;text-shadow:0 0 18px rgba(180,83,9,.28)}
+html[data-theme="light"] .verdict.far .vd-main{color:#e8b100;text-shadow:none}
 html[data-theme="light"] .verdict .vd-main,html[data-theme="light"] .verdict .vd-combo{text-shadow:none}
 html[data-theme="light"] .settle.pure .settle-title{color:#7c3aed;text-shadow:none}
 html[data-theme="light"] .settle.full .settle-title{color:#5b5bd6;text-shadow:none}
 html[data-theme="light"] .settle.complete .settle-title{color:#2563eb;text-shadow:none}
 html[data-theme="light"] .settle.lost .settle-title{color:#dc2626;text-shadow:none}
 html[data-theme="light"] .grade.gEXplus{color:#be185d}
-html[data-theme="light"] .grade.gEX{color:#b45309}
+html[data-theme="light"] .grade.gEX{color:#dfa000}
 html[data-theme="light"] .grade.gAA{color:#c2410c}
 html[data-theme="light"] .grade.gA{color:#15803d}
 html[data-theme="light"] .grade.gB{color:#2563eb}
@@ -406,14 +407,14 @@ html[data-theme="light"] .gF{color:#2563eb}
 html[data-theme="light"] .gC{color:#0f8a44}
 html[data-theme="light"] .gL{color:#dc2626}
 html[data-theme="light"] .settle-verdicts .vs.pure{color:#2563eb}
-html[data-theme="light"] .settle-verdicts .vs.far{color:#b45309}
+html[data-theme="light"] .settle-verdicts .vs.far{color:#dfa000}
 html[data-theme="light"] .settle-verdicts .vs.lost{color:#dc2626}
 html[data-theme="light"] .rr-badge.pure{color:#2563eb}
-html[data-theme="light"] .rr-badge.far{color:#b45309}
+html[data-theme="light"] .rr-badge.far{color:#dfa000}
 html[data-theme="light"] .rr-badge.lost{color:#dc2626}
 html[data-theme="light"] .badge.ok{color:#0f8a44;border-color:#9fd8b4}
-html[data-theme="light"] .badge.mine{color:#a16207;border-color:#e6c27a}
-html[data-theme="light"] .chart-btn .chart-res i,html[data-theme="light"] .li-hard,html[data-theme="light"] .settle-hard{color:#a16207;border-color:#e6c27a}
+html[data-theme="light"] .badge.mine{color:#c99200;border-color:#e6c27a}
+html[data-theme="light"] .chart-btn .chart-res i,html[data-theme="light"] .li-hard,html[data-theme="light"] .settle-hard{color:#c99200;border-color:#e6c27a}
 html[data-theme="light"] .pill{background:rgba(47,111,224,.1);border-color:rgba(47,111,224,.3);color:#2563eb}
 html[data-theme="light"] .pron b,html[data-theme="light"] .detail-row .ac,html[data-theme="light"] .range-val,html[data-theme="light"] .seglv b{color:#2563eb}
 html[data-theme="light"] .example .blank,html[data-theme="light"] .cloze .blank{color:#2563eb}
@@ -1295,8 +1296,8 @@ function renderCard(){
     document.querySelectorAll('#options [data-w]').forEach(function(b){b.onclick=function(){submit(false,b.dataset.w)}});
   }
   qStart=performance.now();phase='question';
-  if(md==='listen')setTimeout(function(){if(seq===renderSeq)speak(d.w,ac)},150);
-  else if(state.settings.autoSpeak)setTimeout(function(){if(seq===renderSeq)speak(d.w,ac)},100);
+  /* 每张单词卡出现时自动播放一遍发音；静音模式下 speak() 会直接返回 */
+  setTimeout(function(){if(seq===renderSeq)speak(d.w,ac)},150);
 }
 /* 输入型题型（拼写 / 听写 / 句子填空）的题干与作答区 */
 function typedBody(d,md){
@@ -2022,7 +2023,7 @@ function renderSettings(){
      }).join('')+
    '</div><div class="tiny" style="margin-top:6px">浅色模式适合白天或强光下阅读；「跟随系统」会随手机的深色/浅色设置自动切换。</div></div>'+
    '<div class="panel"><div class="panel-title">音频</div><div class="choice-grid two"><button class="choice '+(s.accent!=='uk'?'on':'')+'" data-accent="us" type="button">美音 US</button><button class="choice '+(s.accent==='uk'?'on':'')+'" data-accent="uk" type="button">英音 UK</button></div>'+
-   '<div class="toggle"><span>自动朗读当前单词</span><input id="autoSpeak" class="switch" type="checkbox" '+(s.autoSpeak?'checked':'')+'></div>'+
+   '<div class="tiny" style="margin-top:6px">每张单词卡出现时会自动播放一遍发音。</div>'+
    '<div class="toggle"><span>静音模式</span><input id="muteToggle" class="switch" type="checkbox" '+(s.mute?'checked':'')+'></div>'+
    '<div class="range-row"><span class="tiny">语速</span><input id="rateRange" class="range" type="range" min="0.65" max="1.15" step="0.05" value="'+s.speechRate+'"><div id="rateVal" class="range-val">'+Number(s.speechRate).toFixed(2)+'</div></div></div>'+
    '<div class="panel"><div class="panel-title">快捷键（自由录制）</div><div id="hkList"></div><div class="tiny" style="margin-top:8px">点击右侧按钮后按下你想绑定的键（单个按键，不支持组合键）。按 Esc 可取消录制。</div><div class="actions" style="margin-top:10px"><button class="btn ghost" id="hkReset" type="button">恢复默认</button></div></div>'+
@@ -2042,7 +2043,6 @@ function renderSettings(){
     state.settings.theme=b.dataset.themeopt;save();applyTheme();renderSettings();
     toast('外观：'+(b.dataset.themeopt==='dark'?'深色':b.dataset.themeopt==='light'?'浅色':'跟随系统'));
   }});
-  $('autoSpeak').onchange=function(e){state.settings.autoSpeak=e.target.checked;save()};
   $('muteToggle').onchange=function(e){state.settings.mute=e.target.checked;save();toast(state.settings.mute?'已开启静音模式':'已关闭静音模式')};
   var rt=$('remindToggle');if(rt)rt.onchange=function(e){state.settings.remindOn=e.target.checked;save();if(e.target.checked)requestReminder();else toast('已关闭学习提醒')};
   var rTm=$('remindTime');if(rTm)rTm.onchange=function(e){state.settings.remindTime=e.target.value||'20:00';save();toast('提醒时间：'+state.settings.remindTime)};
