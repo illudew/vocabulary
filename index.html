@@ -1537,18 +1537,32 @@ function buildOptions(d,md){
       scored.push({d:c,s:s});
     });
     scored.sort(function(a,b){return b.s-a.s});
+    /* 已选干扰项之间彼此也不能同义，否则会出现两个几乎一样的选项
+       （如 controversial「有争议的，引发争论的」/ contentious「有争议的，引起争论的」） */
+    var picked=[],top=[],pickedZh=[];
+    function distractorOk(c){
+      for(var q=0;q<pickedZh.length;q++){if(sameMeaning(pickedZh[q],c.zh))return false}
+      return true;
+    }
     /* 取 top need 个（如果分差 < 0.8 就混进次优，加一点随机性） */
-    var picked=[],top=[];
     for(var si=0;si<scored.length&&picked.length<need;si++){
       var x=scored[si];
+      if(!distractorOk(x.d))continue;
       if(!picked.length||x.s-picked[0].s<0.8||Math.random()<0.6){
-        picked.push(x.d);seen.add(x.d.w);used[x.d.w]=1;opts.push(x.d);
+        picked.push(x.d);pickedZh.push(x.d.zh);seen.add(x.d.w);used[x.d.w]=1;opts.push(x.d);
       }
     }
     /* 不够继续补 */
     for(var sj=0;sj<scored.length&&picked.length<need;sj++){
-      var y=scored[sj];if(used[y.d.w])continue;
-      picked.push(y.d);seen.add(y.d.w);used[y.d.w]=1;opts.push(y.d);
+      var y=scored[sj];if(used[y.d.w]||!distractorOk(y.d))continue;
+      picked.push(y.d);pickedZh.push(y.d.zh);seen.add(y.d.w);used[y.d.w]=1;opts.push(y.d);
+    }
+    /* 极端兜底：仍不够时放宽「干扰项彼此不同义」，但绝不与正确答案同义 */
+    if(picked.length<need){
+      for(var sk=0;sk<scored.length&&picked.length<need;sk++){
+        var z=scored[sk];if(used[z.d.w])continue;
+        picked.push(z.d);used[z.d.w]=1;opts.push(z.d);
+      }
     }
     opts=shuffle(opts);
     return opts.map(function(x){return {w:x.w,zh:x.zh,text:shortMeaning(x.zh,x.pos,x.core)}});
