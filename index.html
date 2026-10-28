@@ -516,7 +516,7 @@ var DAILY_GOAL=20;
    获取方式：supabase.com 新建项目 → Project Settings → API，复制 Project URL 与 anon public key。
    建表 SQL 见设置页「云端账号」面板。 */
 var SB={url:'https://pxzirgzyryohqqinrgxu.supabase.co',anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4emlyZ3p5cnlvaHFxaW5yZ3h1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNTQ4MzUsImV4cCI6MjEwNjgzMDgzNX0.BMTh2RNH4eni3j4ktKaS44aE0MgpbxV8-3EwQPjv1-8',table:'words_progress',cdn:'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'};
-var DEFAULT={schema:2,settings:{dailyNew:500,reviewLimit:1000,level:5,mode:'auto',accent:'us',speechRate:0.92,autoSpeak:false,mute:false,theme:'auto',remindOn:false,remindTime:'20:00',remindLast:'',hotkeys:{hint:'h',speak:' ',nextFeedback:'n',option1:'1',option2:'2',option3:'3',option4:'4',submit:'Enter'}},words:{},days:{},streak:{count:0,last:null},totalAnswers:0,totalCorrect:0,totalSeconds:0,recent:[],pttHistory:[],rounds:[],lists:{},charts:{},recall:[],sync:{auto:true,lastAt:0}};
+var DEFAULT={schema:2,settings:{dailyNew:500,reviewLimit:1000,level:5,mode:'auto',accent:'us',speechRate:0.92,autoSpeak:false,mute:false,keepMusic:true,theme:'auto',remindOn:false,remindTime:'20:00',remindLast:'',hotkeys:{hint:'h',speak:' ',nextFeedback:'n',option1:'1',option2:'2',option3:'3',option4:'4',submit:'Enter'}},words:{},days:{},streak:{count:0,last:null},totalAnswers:0,totalCorrect:0,totalSeconds:0,recent:[],pttHistory:[],rounds:[],lists:{},charts:{},recall:[],sync:{auto:true,lastAt:0}};
 /* 动作 -> 中文标签（设置页用） */
 var HK_LABEL={hint:'显示提示',speak:'播放发音',nextFeedback:'下一题（结算后）',option1:'选 1',option2:'选 2',option3:'选 3',option4:'选 4',submit:'提交 / 下一题'};
 /* 把 KeyboardEvent.key 转成人能读的标签 */
@@ -1350,8 +1350,10 @@ function dictInfo(w){
    .catch(function(){return done({audioUS:'',audioUK:'',example:''})});
 }
 /* ---------- 发音引擎：WebAudio 优先 ----------
-   <audio> 元素与系统 TTS 播放时都会向系统申请「音频焦点」，会暂停后台音乐（如网易云音乐）。
-   WebAudio 播放不申请音频焦点，音乐可以连贯播放。仅在 CORS/解码失败时回退 <audio>，无词典音频时才用 TTS。 */
+   iOS 上 <audio> 元素与系统 TTS 播放时会激活独占音频会话，必定暂停后台音乐（网易云音乐）；
+   WebAudio 不申请独占音频焦点，音乐可连贯播放。
+   「不打断后台音乐」开启时只走 WebAudio（词典音频 → 有道直连 → 有道经 CORS 代理），全部失败则保持安静；
+   关闭时保持旧行为：WebAudio → <audio> → TTS。 */
 var audioCtx=null,audioBufs={},curSrc=null;
 function ensureAudioCtx(){
   if(!audioCtx){
@@ -1360,17 +1362,29 @@ function ensureAudioCtx(){
   if(audioCtx.state==='suspended'){try{audioCtx.resume()}catch(e){}}
   return audioCtx;
 }
-function playWebAudio(url){
+/* iOS 需在用户手势里解锁 AudioContext，否则自动发音可能无声 */
+['pointerdown','touchend','keydown'].forEach(function(ev){
+  document.addEventListener(ev,function(){
+    var c=ensureAudioCtx();if(!c)return;
+    try{var b=c.createBuffer(1,1,22050),s=c.createBufferSource();s.buffer=b;s.connect(c.destination);s.start(0)}catch(e){}
+  },{passive:true,capture:true});
+});
+function playWebAudio(url,timeoutMs){
   var ctx=ensureAudioCtx();
   if(!ctx)return Promise.reject(new Error('nocc'));
   if(audioBufs[url])return Promise.resolve(audioBufs[url]);
-  return fetch(url).then(function(r){if(!r.ok)throw new Error('nf');return r.arrayBuffer()})
+  var ctrl=null,timer=null;
+  if(timeoutMs){try{ctrl=new AbortController();timer=setTimeout(function(){try{ctrl.abort()}catch(e){}},timeoutMs)}catch(e){}}
+  return fetch(url,ctrl?{signal:ctrl.signal}:undefined)
+    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer()})
     .then(function(ab){return new Promise(function(res,rej){ctx.decodeAudioData(ab,res,rej)})})
     .then(function(buf){
+      if(timer)clearTimeout(timer);
       audioBufs[url]=buf;
       var ks=Object.keys(audioBufs);if(ks.length>24)delete audioBufs[ks[0]];
       return buf;
-    });
+    })
+    .catch(function(err){if(timer)clearTimeout(timer);throw err});
 }
 function startBuffer(buf){
   var ctx=ensureAudioCtx();if(!ctx)return false;
@@ -1378,29 +1392,45 @@ function startBuffer(buf){
   var src=ctx.createBufferSource();src.buffer=buf;src.connect(ctx.destination);
   curSrc=src;src.start();return true;
 }
+function youdaoUrl(w,accent){
+  return 'https://dict.youdao.com/dictvoice?type='+(accent==='uk'?'2':'1')+'&audio='+encodeURIComponent(w);
+}
 function speak(w,accent){
   if(state.settings.mute)return;   /* 静音模式：自动朗读与手动发音一律不响 */
   if(accent!=='us'&&accent!=='uk')accent=(state.settings.accent==='uk'?'uk':'us');
+  var keep=state.settings.keepMusic!==false;   /* 不打断后台音乐，默认开启 */
   var done=false;
   function say(){
     if(done)return;done=true;
     if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(w);u.lang=accent==='us'?'en-US':'en-GB';u.rate=state.settings.speechRate;speechSynthesis.speak(u)}
   }
-  var t=setTimeout(say,1200);
   dictInfo(w).then(function(info){
     if(done)return;
     var url=accent==='us'?(info.audioUS||info.audioUK):(info.audioUK||info.audioUS);
-    if(!url){say();return}
-    /* WebAudio 优先：不打断后台音乐 */
-    playWebAudio(url).then(function(buf){
-      if(done)return;done=true;clearTimeout(t);
-      startBuffer(buf);
-    }).catch(function(){
+    if(!keep){
+      /* 旧行为：WebAudio → <audio> → TTS（后两者会打断音乐） */
+      if(!url){say();return}
+      playWebAudio(url,4000).then(function(buf){
+        if(done)return;done=true;startBuffer(buf);
+      }).catch(function(){
+        if(done)return;done=true;
+        try{var a=new Audio(url),pr=a.play();if(pr&&pr.catch)pr.catch(function(){done=false;say()})}catch(e){done=false;say()}
+      });
+      return;
+    }
+    /* 音乐共存：只走 WebAudio，绝不调用 TTS / <audio>；全部失败保持安静 */
+    var urls=[];
+    if(url)urls.push(url);
+    var yd=youdaoUrl(w,accent);
+    urls.push(yd);
+    ['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url=','https://api.codetabs.com/v1/proxy?quest='].forEach(function(p){urls.push(p+encodeURIComponent(yd))});
+    (function chain(i){
       if(done)return;
-      /* 回退 <audio>（需音频焦点，会短暂打断音乐） */
-      done=true;clearTimeout(t);
-      try{var a=new Audio(url),pr=a.play();if(pr&&pr.catch)pr.catch(function(){done=false;say()})}catch(e){done=false;say()}
-    });
+      if(i>=urls.length){done=true;return}   /* 宁可不出声，也不打断音乐 */
+      playWebAudio(urls[i],4500).then(function(buf){
+        if(done)return;done=true;startBuffer(buf);
+      }).catch(function(){chain(i+1)});
+    })(0);
   });
 }
 function hint(){
@@ -2073,8 +2103,9 @@ function renderSettings(){
      }).join('')+
    '</div><div class="tiny" style="margin-top:6px">浅色模式适合白天或强光下阅读；「跟随系统」会随手机的深色/浅色设置自动切换。</div></div>'+
    '<div class="panel"><div class="panel-title">音频</div><div class="choice-grid two"><button class="choice '+(s.accent!=='uk'?'on':'')+'" data-accent="us" type="button">美音 US</button><button class="choice '+(s.accent==='uk'?'on':'')+'" data-accent="uk" type="button">英音 UK</button></div>'+
-   '<div class="tiny" style="margin-top:6px">每张单词卡出现时会自动播放一遍发音；词典音频用 WebAudio 播放，通常不会打断后台音乐。</div>'+
-   '<div class="toggle"><span>静音模式</span><input id="muteToggle" class="switch" type="checkbox" '+(s.mute?'checked':'')+'></div>'+
+   '<div class="toggle"><span>不打断后台音乐</span><input id="keepMusicToggle" class="switch" type="checkbox" '+(s.keepMusic!==false?'checked':'')+'></div>'+
+   '<div class="tiny" style="margin-top:4px">开启后发音仅用 WebAudio 播放（iOS 上不会暂停网易云音乐）；个别词若无可用音频源则保持安静。注意：iPhone 侧边静音拨片打开时 WebAudio 会静音。关闭后回退系统语音，发音更全但会短暂打断音乐。</div>'+
+   '<div class="toggle" style="margin-top:10px"><span>静音模式</span><input id="muteToggle" class="switch" type="checkbox" '+(s.mute?'checked':'')+'></div>'+
    '<div class="range-row"><span class="tiny">语速</span><input id="rateRange" class="range" type="range" min="0.65" max="1.15" step="0.05" value="'+s.speechRate+'"><div id="rateVal" class="range-val">'+Number(s.speechRate).toFixed(2)+'</div></div></div>'+
    '<div class="panel"><div class="panel-title">快捷键（自由录制）</div><div id="hkList"></div><div class="tiny" style="margin-top:8px">点击右侧按钮后按下你想绑定的键（单个按键，不支持组合键）。按 Esc 可取消录制。</div><div class="actions" style="margin-top:10px"><button class="btn ghost" id="hkReset" type="button">恢复默认</button></div></div>'+
    '<div class="panel"><div class="panel-title">学习提醒</div>'+
@@ -2094,6 +2125,7 @@ function renderSettings(){
     toast('外观：'+(b.dataset.themeopt==='dark'?'深色':b.dataset.themeopt==='light'?'浅色':'跟随系统'));
   }});
   $('muteToggle').onchange=function(e){state.settings.mute=e.target.checked;save();toast(state.settings.mute?'已开启静音模式':'已关闭静音模式')};
+  var km=$('keepMusicToggle');if(km)km.onchange=function(e){state.settings.keepMusic=e.target.checked;save();toast(e.target.checked?'已开启音乐共存：发音不会打断后台音乐':'已关闭音乐共存：回退系统语音')};
   var rt=$('remindToggle');if(rt)rt.onchange=function(e){state.settings.remindOn=e.target.checked;save();if(e.target.checked)requestReminder();else toast('已关闭学习提醒')};
   var rTm=$('remindTime');if(rTm)rTm.onchange=function(e){state.settings.remindTime=e.target.value||'20:00';save();toast('提醒时间：'+state.settings.remindTime)};
   $('rateRange').oninput=function(e){state.settings.speechRate=+e.target.value;$('rateVal').textContent=Number(e.target.value).toFixed(2);save()};
