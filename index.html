@@ -366,6 +366,8 @@ button{cursor:pointer}
 .rush-cat{margin-bottom:12px}
 .rush-cat-t{font-size:12.5px;font-weight:700;color:var(--fg-2);margin-bottom:6px;display:flex;align-items:center;gap:7px}
 .rush-cat-t span{font-size:10px;font-weight:600;color:var(--fg-4);border:1px solid var(--border-2);border-radius:6px;padding:1px 5px}
+.rush-allcat{margin-left:auto;padding:4px 9px;border-radius:8px;border:1px solid var(--border-2);background:var(--surface-2);color:var(--fg-4);font-size:11px;cursor:pointer}
+.rush-allcat.on{border-color:#3a68c8;color:var(--accent-fg);background:var(--hover)}
 .rush-lists{display:flex;flex-wrap:wrap;gap:6px}
 .rush-chip{padding:7px 9px;border-radius:9px;border:1px solid var(--border-2);background:var(--surface-2);color:var(--fg-3);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
 .rush-chip i{font-style:normal;font-size:10px;color:var(--fg-4)}
@@ -669,7 +671,7 @@ function normalize(o){
   var recall=Array.isArray(o.recall)?o.recall.filter(function(x){return x&&x.d}).slice(-10):[];
   var charts=(o.charts&&typeof o.charts==='object'&&!Array.isArray(o.charts))?o.charts:{};
   var rounds=Array.isArray(o.rounds)?o.rounds.filter(function(x){return x&&isFinite(+x.v)}).slice(-200):[];
-  return {schema:2,settings:st,words:ws,days:days,streak:Object.assign({},DEFAULT.streak,(o.streak&&typeof o.streak==='object')?o.streak:{}),totalAnswers:+o.totalAnswers||0,totalCorrect:+o.totalCorrect||0,totalSeconds:+o.totalSeconds||0,recent:rec,pttHistory:hist,rounds:rounds,lists:lists,charts:charts,recall:recall,ownershipV:+o.ownershipV||0,sync:Object.assign({auto:true,lastAt:0},(o.sync&&typeof o.sync==='object')?o.sync:{})};
+  return {schema:2,settings:st,words:ws,days:days,streak:Object.assign({},DEFAULT.streak,(o.streak&&typeof o.streak==='object')?o.streak:{}),totalAnswers:+o.totalAnswers||0,totalCorrect:+o.totalCorrect||0,totalSeconds:+o.totalSeconds||0,recent:rec,pttHistory:hist,rounds:rounds,lists:lists,charts:charts,recall:recall,listDone:(o.listDone&&typeof o.listDone==='object'&&!Array.isArray(o.listDone))?o.listDone:{},ownershipV:+o.ownershipV||0,sync:Object.assign({auto:true,lastAt:0},(o.sync&&typeof o.sync==='object')?o.sync:{})};
 }
 /* 统一写档：先写主档，成功后把「上一次的主档」转存为备份；写满则瘦身重试，仍失败会明确提示（绝不静默丢档） */
 function writeState(noSync){
@@ -851,7 +853,11 @@ function reviewCutoff(){
   if(h<8)d.setDate(d.getDate()-1);
   return d.getTime();
 }
-function getDue(){var t=reviewCutoff();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.dueAt<=t}).sort(function(a,b){return (state.words[a].dueAt||0)-(state.words[b].dueAt||0)})}
+function getDue(){var t=reviewCutoff();return Object.keys(state.words).filter(function(w){
+  var r=state.words[w];if(!(MAP[w]&&r.seen>0&&r.dueAt<=t))return false;
+  /* 今日已完成的 List 不再计入待复习 */
+  var own=ownerListOf(w);return !(own&&listDoneToday(own));
+}).sort(function(a,b){return (state.words[a].dueAt||0)-(state.words[b].dueAt||0)})}
 function todayWords(){var t=today();return Object.keys(state.words).filter(function(w){var r=state.words[w];return MAP[w]&&r.seen>0&&r.introduced===t})}
 function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
 /* 把某个词插到队列前方第 gap 个位置；同一单词先移除旧实例，避免同一轮重复出现 */
@@ -984,6 +990,18 @@ function ownerListOf(w){
   var src=r.src;
   return (src&&LIST_BY_KEY[src]&&(LIST_BY_KEY[src].words||[]).indexOf(w)>=0)?src:null;
 }
+/* 某 List 今日是否已完成一轮：完成过的 List 当天不再出现在「待复习」里 */
+function listDoneToday(key){
+  var m=state.listDone||{};
+  return !!key&&m[key]===today();
+}
+function markListDoneToday(key){
+  if(!key)return;
+  var t=today(),m={};
+  /* 只保留今天的记录，避免长期累积 */
+  Object.keys(state.listDone||{}).forEach(function(k){if(state.listDone[k]===t)m[k]=t});
+  m[key]=t;state.listDone=m;
+}
 /* List 的「学习权重」= 该 List 里已学过的词数；没有任何成绩记录（没真正背过）则返回 -1，
    用于纠正早期版本把共用词误判给没背过的 List */
 function listLearnCount(key){
@@ -999,9 +1017,11 @@ function listWeight(key){
   if(!rec)return -1;
   return listLearnCount(key);
 }
-/* 某 List 当前所有到期单词（seen>0 且 dueAt 已过最近一次早上 8 点） */
+/* 某 List 当前所有到期单词（seen>0 且 dueAt 已过最近一次早上 8 点）；
+   今日已经完成过一轮（背单词或速通全部认识）的 List 直接视为无需复习 */
 function dueWordsOfList(key){
   var L=LIST_BY_KEY[key];if(!L)return [];
+  if(listDoneToday(key))return [];
   var t=reviewCutoff();
   return (L.words||[]).filter(function(w){
     var r=state.words[w];
@@ -1059,6 +1079,7 @@ function resetList(key){
   var words=L.words||[];
   if(state.lists)delete state.lists[key];
   if(state.charts)delete state.charts[key];
+  if(state.listDone)delete state.listDone[key];
   var cleared=0,kept=0;
   words.forEach(function(w){
     if(!state.words[w])return;
@@ -1258,7 +1279,9 @@ function renderRush(){
   var sel=rushSel.lists||[];
   var total=0;sel.forEach(function(k){var L=LIST_BY_KEY[k];if(L)total+=L.words.length});
   var body=CATS.map(function(c){
-    return '<div class="rush-cat"><div class="rush-cat-t">'+escapeHtml(c.n)+'<span>'+c.band+'</span></div><div class="rush-lists">'+
+    var allOn=c.lists.length>0&&c.lists.every(function(l,i){return sel.indexOf(listKey(c.k,i))>=0});
+    return '<div class="rush-cat"><div class="rush-cat-t">'+escapeHtml(c.n)+'<span>'+c.band+'</span>'+
+      '<button type="button" class="rush-allcat'+(allOn?' on':'')+'" data-allcat="'+c.k+'">'+(allOn?'取消全选':'全选')+'</button></div><div class="rush-lists">'+
       c.lists.map(function(l,i){
         var k=listKey(c.k,i),on=sel.indexOf(k)>=0;
         return '<button type="button" class="rush-chip'+(on?' on':'')+'" data-list="'+k+'">L'+(i+1)+'<i>'+(l.w||[]).length+'</i></button>';
@@ -1273,6 +1296,14 @@ function renderRush(){
   $('rushBack').onclick=function(){showView('home')};
   $('rushAll').onclick=function(){rushSel.lists=[];CATS.forEach(function(c){c.lists.forEach(function(l,i){rushSel.lists.push(listKey(c.k,i))})});renderRush()};
   $('rushNone').onclick=function(){rushSel.lists=[];renderRush()};
+  el.querySelectorAll('[data-allcat]').forEach(function(b){b.onclick=function(){
+    var c=CATS.filter(function(x){return x.k===b.dataset.allcat})[0];if(!c)return;
+    var keys=c.lists.map(function(l,i){return listKey(c.k,i)});
+    var allOn=keys.length>0&&keys.every(function(k){return rushSel.lists.indexOf(k)>=0});
+    if(allOn)rushSel.lists=rushSel.lists.filter(function(k){return keys.indexOf(k)<0});
+    else keys.forEach(function(k){if(rushSel.lists.indexOf(k)<0)rushSel.lists.push(k)});
+    renderRush();
+  }});
   el.querySelectorAll('[data-list]').forEach(function(b){b.onclick=function(){
     var k=b.dataset.list,i=rushSel.lists.indexOf(k);
     if(i>=0)rushSel.lists.splice(i,1);else rushSel.lists.push(k);
@@ -1311,7 +1342,11 @@ function renderRushCard(){
      '<div class="actions" id="rushAsk"><button class="btn primary" id="rushKnown" type="button">认识</button><button class="btn ghost" id="rushForgot" type="button">遗忘</button></div>'+
      '<div class="actions hidden" id="rushAfter"><button class="btn primary" id="rushNext" type="button">继续</button></div></div>';
   document.querySelectorAll('[data-pron]').forEach(function(b){b.onclick=function(){speak(d.w,b.dataset.pron)}});
-  $('rushKnown').onclick=function(){rushAdvance()};
+  $('rushKnown').onclick=function(){
+    /* 记录「认识」：若某个 List 的全部单词都被认识，本轮结束时该 List 今日不再复习 */
+    session.known=session.known||{};session.known[d.w]=1;
+    rushAdvance();
+  };
   $('rushForgot').onclick=function(){
     var z=$('rushZh');if(z)z.classList.remove('hidden');
     var ask=$('rushAsk');if(ask)ask.classList.add('hidden');
@@ -1329,14 +1364,27 @@ function rushAdvance(){
   if(!session.queue.length){rushFinish();return}
   renderRushCard();
 }
-/* 速通结束页：没有成绩与评级，只有完成提示 */
+/* 速通结束页：没有成绩与评级，只有完成提示；
+   若某个 List 的单词全部被标为「认识」，该 List 今日不再列入待复习 */
 function rushFinish(){
   var total=session?(session.total||0):0;
+  var keys=(session&&session.ctx&&session.ctx.keys)||[];
+  var known=(session&&session.known)||{};
+  var passed=0;
+  keys.forEach(function(k){
+    var L=LIST_BY_KEY[k];if(!L)return;
+    var ws=L.words||[];
+    if(!ws.length)return;
+    for(var i=0;i<ws.length;i++){if(!known[ws[i]])return}
+    markListDoneToday(k);passed++;
+  });
+  if(passed)save();
   session=null;phase='question';
   var box=$('study-card');if(!box)return;
   box.innerHTML='<div class="card"><div class="settle-eyebrow">RUSH COMPLETE</div>'+
     '<div class="rush-done">本轮速通完成</div>'+
-    '<div class="tiny" style="margin-top:8px">共 '+total+' 词 · 本模式不记成绩</div>'+
+    '<div class="tiny" style="margin-top:8px">共 '+total+' 词 · 本模式不记成绩'+
+      (passed?' · 其中 '+passed+' 个 List 全部认识，今日无需复习':'')+'</div>'+
     '<div class="actions"><button class="btn primary" id="rushAgain" type="button">再来一轮</button></div>'+
     '<div class="actions"><button class="btn ghost" id="rushBack2" type="button">返回选择</button></div></div>';
   $('rushAgain').onclick=function(){startRush((rushSel.lists||[]).slice())};
@@ -2007,6 +2055,8 @@ function finish(){
     var prevBestL=prevL?(prevL.bestScore!=null?prevL.bestScore:(prevL.score||0)):0;
     var bestScoreL=Math.max(score,prevBestL);
     state.lists[ctx.ckey]={done:!failed,tier:tier,grade:grade,score:score,bestScore:bestScoreL,hard:!!(ctx.hard&&!failed),maxCombo:maxCombo,late:vLate,bigP:vBig,potential:potential,band:band,diff:diff,at:today()};
+    /* 完成该 List 的一轮背诵后，今天不再把它列进「待复习」 */
+    if(!failed)markListDoneToday(ctx.ckey);
   }else if(ctx.type==='recall'){
     recordChart(ctx.ckey||'recall',{key:ctx.ckey||'recall',label:'回忆 · '+(ctx.catsLabel||band),potential:potential,score:score,tier:tier,grade:grade,band:band,diff:diff,nodiff:false,at:Date.now()});
     state.recall=state.recall||[];
@@ -2461,6 +2511,12 @@ function mergeState(a,b){
   (a.recall||[]).concat(b.recall||[]).forEach(function(x){var k=String((x&&x.at)||JSON.stringify(x));if(seenC[k])return;seenC[k]=1;rc.push(x)});
   rc.sort(function(p,q){return (p.at||0)-(q.at||0)});
   out.recall=rc.slice(-10);
+  /* 今日已完成 List：取两边日期较新者 */
+  out.listDone=out.listDone||{};
+  Object.keys(b.listDone||{}).forEach(function(k){
+    var x=out.listDone[k],y=b.listDone[k];
+    if(!x||String(y)>String(x))out.listDone[k]=y;
+  });
   return out;
 }
 function markSynced(at){state.sync.lastAt=at||Date.now();persistLocal();refreshSyncDot();var el=$('acctLast');if(el)el.textContent=new Date(state.sync.lastAt).toLocaleString()}
