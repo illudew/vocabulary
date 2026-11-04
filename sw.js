@@ -1,5 +1,5 @@
 /* WORDS Service Worker —— 离线可用（词库见 words.json，联网仅用于在线发音） */
-var CACHE = 'words-v7-57';
+var CACHE = 'words-v7-58';
 var ASSETS = [
   './',
   './index.html',
@@ -60,16 +60,19 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  /* 词库：网络优先（强制绕过 HTTP 缓存），断网时回退缓存 */
+  /* 词库（约 5MB）：缓存优先、后台更新。
+     首屏直接读缓存，秒开；后台静默拉新版本，下次启动生效。 */
   if (/\/words\.json$/.test(url.pathname)) {
     e.respondWith(
-      fetch(req, { cache: 'reload' }).then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put('./words.json', copy); });
-        return res;
-      }).catch(function () {
-        return caches.match('./words.json');
+      caches.match('./words.json').then(function (hit) {
+        var net = fetch(req).then(function (res) {
+          if (res.ok) {
+            var copy = res.clone();
+            caches.open(CACHE).then(function (c) { c.put('./words.json', copy); });
+          }
+          return res;
+        }).catch(function () { return hit; });
+        return hit || net;
       })
     );
     return;
