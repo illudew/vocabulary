@@ -45,17 +45,17 @@ html[data-theme="light"]{
   --ok-text:#14532d;--bad-text:#7f1d1d;
   --cta-from:#e8efff;--cta-to:#f2f6ff;--cta-border:#bcd0f5;
 }
-html,body{margin:0;padding:0;min-height:100%;background:var(--bg);color:var(--fg)}
+html,body{margin:0;padding:0;min-height:100%;background:var(--bg);color:var(--fg);overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;justify-content:center}
 button,input{font:inherit}
 button{cursor:pointer}
-#app{width:100%;max-width:620px;min-height:100vh;padding-bottom:40px}
+#app{width:100%;max-width:620px;min-height:100vh;min-height:100dvh;padding-bottom:calc(40px + env(safe-area-inset-bottom))}
 .hidden{display:none!important}
-.topbar{height:68px;padding:17px 18px 9px;display:flex;align-items:center;justify-content:space-between}
+.topbar{min-height:68px;padding:17px 18px 9px;padding-left:calc(18px + env(safe-area-inset-left));padding-right:calc(18px + env(safe-area-inset-right));display:flex;align-items:center;justify-content:space-between;gap:10px}
 .brand{font-size:18px;font-weight:780;letter-spacing:3px}
 .brand span{color:var(--accent-fg)}
 .top-meta{display:flex;align-items:center;gap:8px}
-.streak{font-size:12px;color:var(--fg-3);background:var(--surface);border:1px solid var(--border-2);padding:7px 12px;border-radius:999px}
+.streak{font-size:12px;color:var(--fg-3);background:var(--surface);border:1px solid var(--border-2);padding:7px 12px;border-radius:999px;white-space:nowrap}
 
 .sync-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(57,217,138,.08);cursor:pointer}
 .sync-dot.off{background:#4a5262;box-shadow:0 0 0 4px rgba(120,130,150,.08)}
@@ -65,7 +65,7 @@ button{cursor:pointer}
 .acct-input{width:100%;background:var(--surface-3);border:1px solid var(--border-2);color:var(--fg);border-radius:11px;padding:11px 12px;font-size:14px;margin-top:8px}
 .acct-input:focus{outline:none;border-color:#3a68c8}
 .sql{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;background:var(--deep);border:1px solid var(--border-2);border-radius:10px;padding:10px;color:var(--accent-fg);white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:190px;overflow:auto}
-.main{padding:0 15px}
+.main{padding:0 15px;padding-left:calc(15px + env(safe-area-inset-left));padding-right:calc(15px + env(safe-area-inset-right))}
 .view{animation:fade .22s ease}
 @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .section-head{display:flex;justify-content:space-between;align-items:end;margin:6px 2px 12px}
@@ -87,9 +87,9 @@ button{cursor:pointer}
 .pill{font-size:10.5px;padding:4px 9px;border-radius:999px;background:rgba(79,140,255,.12);border:1px solid rgba(79,140,255,.27);color:var(--accent-fg)}
 .pill.dim{background:var(--surface-5);border-color:var(--border-2);color:var(--fg-4)}
 .phonetic{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--fg-4)}
-.word{font-size:35px;line-height:1.14;letter-spacing:.2px;font-weight:760;margin:3px 0 8px;word-break:break-word}
+.word{font-size:clamp(27px,8.4vw,40px);line-height:1.14;letter-spacing:.2px;font-weight:760;margin:3px 0 8px;word-break:break-word}
 .pos{font-size:11.5px;color:var(--fg-4);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.meaning{font-size:21px;line-height:1.55;font-weight:650;margin:8px 0 12px}
+.meaning{font-size:clamp(18px,5.2vw,22px);line-height:1.55;font-weight:650;margin:8px 0 12px}
 .meaning .sub{font-size:12px;color:var(--fg-4);font-weight:450;display:block;margin-top:4px}
 .example{font-size:14.5px;line-height:1.85;color:var(--fg-2);background:var(--surface-4);border:1px solid var(--border-2);border-radius:13px;padding:12px 13px;margin:11px 0;min-height:44px}
 .example .blank{color:var(--accent-fg);font-weight:700;letter-spacing:2px}
@@ -244,7 +244,7 @@ button{cursor:pointer}
 .switch:checked{background:var(--accent)}
 .switch:checked:before{left:21px;background:#fff}
 .source-box{background:var(--deep);border:1px solid var(--border-2);border-radius:12px;padding:11px 12px;color:var(--fg-4);font-size:11px;line-height:1.7}
-.toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,14px);background:#212632;color:var(--fg);border:1px solid var(--border-2);padding:9px 16px;border-radius:999px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s;z-index:50;white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:calc(34px + env(safe-area-inset-bottom));transform:translate(-50%,14px);background:#212632;color:var(--fg);border:1px solid var(--border-2);padding:9px 16px;border-radius:999px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s;z-index:50;white-space:nowrap;max-width:calc(100vw - 28px);overflow:hidden;text-overflow:ellipsis}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .error-box{position:fixed;left:12px;right:12px;top:12px;z-index:90;background:#3a1517;border:1px solid #6c282d;color:#ffc3c6;padding:11px 13px;border-radius:12px;font-size:11.5px;line-height:1.5;white-space:pre-wrap}
 .empty{text-align:center;padding:50px 18px;color:var(--fg-4)}
@@ -451,7 +451,122 @@ html[data-theme="light"] .example .blank,html[data-theme="light"] .cloze .blank{
 html[data-theme="light"] .choice.proper{color:#7c3aed;border-color:#d9c9f7}
 html[data-theme="light"] .switch:before{background:#fff}
 html[data-theme="light"] .toast{background:#20293a;color:#f4f7fc;border-color:#39445a}
-@media(max-width:420px){.choice-grid{grid-template-columns:repeat(3,1fr)}.choice-grid.ten{grid-template-columns:repeat(4,1fr)}.word{font-size:31px}.meaning{font-size:20px}.topbar{padding:17px 12px 9px}.top-meta{gap:5px}.streak{font-size:11px;padding:6px 9px}}
+/* ================= 响应式适配 =================
+   超小屏手机 → 小屏手机 → 大屏手机 → 平板 → 桌面，逐级放大字号、留白与列数。
+   所有断点只调尺寸，不改结构，保证交互逻辑与 JS 完全一致。 */
+
+/* 超小屏（iPhone SE 一代 / 320–359px）：压缩留白，关键按钮仍保持可点面积 */
+@media (max-width:359px){
+  .main{padding-left:calc(11px + env(safe-area-inset-left));padding-right:calc(11px + env(safe-area-inset-right))}
+  .topbar{padding:13px 11px 7px;padding-left:calc(11px + env(safe-area-inset-left));padding-right:calc(11px + env(safe-area-inset-right));min-height:60px;gap:6px;flex-wrap:wrap;row-gap:5px}
+  .brand{font-size:16px;letter-spacing:2px}
+  /* 极窄屏：把 Potential / 连续天数移到第二行，避免胶囊内文字折行 */
+  .top-meta{gap:5px;width:100%;justify-content:flex-end}
+  .streak{font-size:10.5px;padding:5px 9px}
+  /* 首页按钮：标题不再被副标题挤压折行，副标题独占一行 */
+  .home-grid .home-btn{flex-wrap:wrap}
+  .home-btn .hb-t{flex:1 1 auto;min-width:0}
+  .home-grid .home-btn .hb-s{flex:1 1 calc(100% - 33px);max-width:none;margin-left:33px;text-align:left;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
+  .card{padding:17px 14px 15px;border-radius:17px}
+  .word{font-size:26px}
+  .meaning{font-size:18px}
+  .options{gap:7px}
+  .opt{padding:10px 11px;font-size:13px}
+  .opt.word .txt{font-size:15px}
+  .btn{padding:11px 12px;font-size:13.5px}
+  .section-head{margin-bottom:10px}
+  .page-title{font-size:18px}
+  .home-btn{padding:15px 13px;gap:11px;border-radius:14px}
+  .home-btn .hb-t{font-size:15px}
+  .home-btn .hb-s{font-size:10px}
+  .settle{padding:26px 14px 20px}
+  .settle-title{font-size:25px}
+  .settle-score b{font-size:28px}
+  .settle-stats{gap:16px}
+  .week{gap:4px}
+  .day{padding:7px 0}
+  .li-charts{grid-template-columns:1fr 1fr;gap:6px}
+  .chart-btn{padding:8px}
+  .list-toolbar{gap:10px}
+  .list-toolbar .rec-grid{grid-template-columns:repeat(auto-fit,minmax(62px,1fr));width:100%}
+  .rec-grid{grid-template-columns:repeat(3,1fr)}
+  .choice-grid{grid-template-columns:repeat(3,1fr)}
+  .choice-grid.ten{grid-template-columns:repeat(4,1fr)}
+  .bank-chip,.rush-chip{padding:7px 9px;font-size:12px}
+}
+
+/* 小屏手机（≤420px）：轻微收紧，避免标题与顶部信息挤压 */
+@media (max-width:420px){
+  .choice-grid{grid-template-columns:repeat(3,1fr)}
+  .choice-grid.ten{grid-template-columns:repeat(4,1fr)}
+  .topbar{padding:15px 12px 8px;padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right))}
+  .top-meta{gap:5px}
+  .streak{font-size:11px;padding:6px 9px}
+  .settle-stats{gap:20px}
+  /* 多按钮并排（如结算页 3 个按钮）时允许换行，避免文字被挤出卡片 */
+  .actions{flex-wrap:wrap}
+  .actions .btn{flex:1 1 auto;min-width:calc(50% - 5px)}
+  .list-toolbar{flex-direction:column;align-items:flex-start;gap:9px}
+  .list-toolbar .rec-grid{grid-template-columns:repeat(auto-fit,minmax(62px,1fr));width:100%}
+  /* iOS 上字号 <16px 的输入框聚焦会自动放大页面，这里统一抬到 16px */
+  .search-input,.acct-input,.answer-input{font-size:16px}
+  .home-btn .hb-s{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
+/* 大屏手机 / 小窗（≥560px）：首页改为双列，减少纵向滚动 */
+@media (min-width:560px){
+  .home-grid{grid-template-columns:1fr 1fr;gap:12px}
+  .home-grid .home-btn:last-child:nth-child(odd){grid-column:1/-1}
+  .home-btn{padding:17px 16px}
+  .home-btn .hb-s{max-width:56%}
+  .cat-grid{gap:12px}
+  .card{padding:24px 22px 20px}
+  .panel{padding:17px}
+  .topbar{padding-top:20px}
+}
+
+/* 平板（≥760px）：加宽容器，统计卡 / 词库卡改为三列 */
+@media (min-width:760px){
+  #app{max-width:760px}
+  .main{padding-left:calc(22px + env(safe-area-inset-left));padding-right:calc(22px + env(safe-area-inset-right))}
+  .topbar{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}
+  .grid2{grid-template-columns:repeat(3,1fr)}
+  .cat-grid{grid-template-columns:repeat(3,1fr)}
+  .word{font-size:42px}
+  .meaning{font-size:23px}
+  .page-title{font-size:22px}
+  .settle-title{font-size:34px}
+  .settle-score b{font-size:36px}
+  .week{gap:9px}
+}
+
+/* 桌面 / 宽窗口（≥1024px）：再放宽一档，阅读更舒展 */
+@media (min-width:1024px){
+  #app{max-width:860px;padding-bottom:56px}
+  .main{padding-left:calc(28px + env(safe-area-inset-left));padding-right:calc(28px + env(safe-area-inset-right))}
+  .word{font-size:46px}
+  .meaning{font-size:24px}
+  .card{padding:28px 26px 24px}
+  .panel{padding:19px}
+  .home-grid{gap:14px}
+  .home-btn{padding:20px 18px}
+  .stat .v{font-size:27px}
+}
+
+/* 横屏矮屏（如手机横放）：压缩纵向留白，一屏尽量看到卡片与按钮 */
+@media (max-height:520px) and (orientation:landscape){
+  .topbar{min-height:52px;padding-top:9px;padding-bottom:5px}
+  .card{padding:15px 18px 13px}
+  .word{font-size:30px;margin-bottom:4px}
+  .meaning{font-size:19px;margin:6px 0 9px}
+  .actions{margin-top:10px}
+  .crumb{margin-bottom:9px}
+}
+
+/* 尊重系统「减少动态效果」设置 */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
 </style>
 <script>
 /* 主题需要在首屏绘制之前生效，否则会先闪一下深色再切浅色。
